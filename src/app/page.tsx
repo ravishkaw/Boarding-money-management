@@ -28,7 +28,7 @@ export default async function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{monthLabel(monthRow)}</h1>
         <Link href="/months" className="text-sm text-zinc-500 underline">
-          all months
+          All months
         </Link>
       </div>
 

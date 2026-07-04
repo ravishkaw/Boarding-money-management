@@ -25,6 +25,8 @@ export function QuickAddForm({
   const [unitPrice, setUnitPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [personal, setPersonal] = useState(false);
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
 
   const priceNum = Number(unitPrice.replace(/,/g, ""));
   const qtyNum = Number(quantity);
@@ -32,6 +34,16 @@ export function QuickAddForm({
     priceNum > 0 && qtyNum > 0
       ? Math.round(priceNum * qtyNum * 100) / 100
       : null;
+
+  const totalCents = total !== null ? Math.round(total * 100) : null;
+  const splitSumCents = people.reduce(
+    (sum, p) =>
+      sum +
+      Math.round(Number((splitAmounts[p.id] ?? "").replace(/,/g, "") || 0) * 100),
+    0,
+  );
+  const splitRemaining =
+    totalCents !== null ? totalCents - splitSumCents : null;
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -99,23 +111,71 @@ export function QuickAddForm({
       )}
 
       <fieldset className="flex flex-col gap-1">
-        <legend className="text-sm font-medium">Who paid?</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {people.map((p) => (
-            <label key={p.id} className="cursor-pointer">
-              <input
-                type="radio"
-                name="payerPersonId"
-                value={p.id}
-                defaultChecked={p.id === defaultPayerId}
-                className="peer sr-only"
-              />
-              <span className="block rounded-xl border border-zinc-300 px-2 py-2 text-center text-sm peer-checked:border-emerald-600 peer-checked:bg-emerald-50 peer-checked:font-semibold dark:border-zinc-700 dark:peer-checked:bg-emerald-950">
-                {p.name.split(" ")[0]}
-              </span>
-            </label>
-          ))}
+        <div className="flex items-center justify-between">
+          <legend className="text-sm font-medium">Who paid?</legend>
+          <button
+            type="button"
+            onClick={() => setSplitMode(!splitMode)}
+            className="text-xs text-emerald-700 underline dark:text-emerald-400"
+          >
+            {splitMode ? "Single payer" : "Split between people…"}
+          </button>
         </div>
+        <input type="hidden" name="splitMode" value={splitMode ? "1" : ""} />
+
+        {!splitMode ? (
+          <div className="grid grid-cols-3 gap-2">
+            {people.map((p) => (
+              <label key={p.id} className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="payerPersonId"
+                  value={p.id}
+                  defaultChecked={p.id === defaultPayerId}
+                  className="peer sr-only"
+                />
+                <span className="block rounded-xl border border-zinc-300 px-2 py-2 text-center text-sm peer-checked:border-emerald-600 peer-checked:bg-emerald-50 peer-checked:font-semibold dark:border-zinc-700 dark:peer-checked:bg-emerald-950">
+                  {p.name.split(" ")[0]}
+                </span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+            {people.map((p) => (
+              <label
+                key={p.id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span>{p.name.split(" ")[0]} put in (Rs.)</span>
+                <input
+                  name={`splitAmount_${p.id}`}
+                  value={splitAmounts[p.id] ?? ""}
+                  onChange={(e) =>
+                    setSplitAmounts({
+                      ...splitAmounts,
+                      [p.id]: e.target.value,
+                    })
+                  }
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-right dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </label>
+            ))}
+            {totalCents !== null && (
+              <p
+                className={`text-xs ${splitRemaining === 0 ? "text-emerald-600" : "text-amber-600"}`}
+              >
+                {splitRemaining === 0
+                  ? "Adds up to the total ✓"
+                  : splitRemaining! > 0
+                    ? `Rs. ${(splitRemaining! / 100).toFixed(2)} still unassigned`
+                    : `Rs. ${(-splitRemaining! / 100).toFixed(2)} over the total`}
+              </p>
+            )}
+          </div>
+        )}
       </fieldset>
 
       <label className="flex flex-col gap-1">

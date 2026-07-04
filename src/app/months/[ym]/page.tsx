@@ -127,7 +127,7 @@ export default async function MonthPage({
       )}
 
       <Link href="/months" className="text-sm text-zinc-500 underline">
-        ← all months
+        ← All months
       </Link>
     </main>
   );

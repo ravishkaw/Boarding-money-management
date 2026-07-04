@@ -43,6 +43,7 @@ export async function createManualBill(
   const unitPriceCents = parseAmount(String(formData.get("unitPrice") ?? ""));
   const qtyRaw = String(formData.get("quantity") ?? "1").trim() || "1";
   const quantity = /^\d+(\.\d{1,3})?$/.test(qtyRaw) ? Number(qtyRaw) : null;
+  const splitMode = formData.get("splitMode") === "1";
   const payerPersonId = Number(formData.get("payerPersonId"));
   const billDate = String(formData.get("billDate") ?? "");
   const status = String(formData.get("status") ?? "shared") as
@@ -57,7 +58,28 @@ export async function createManualBill(
   if (quantity === null || quantity <= 0)
     return { error: "Enter a valid quantity." };
   const amountCents = Math.round(unitPriceCents * quantity);
-  if (!Number.isInteger(payerPersonId))
+
+  // Optional split between payers: entries must add up to the total.
+  let split: { personId: number; amountCents: number }[] = [];
+  if (splitMode) {
+    for (const [key, value] of formData.entries()) {
+      const match = /^splitAmount_(\d+)$/.exec(key);
+      if (!match) continue;
+      const cents = parseAmount(String(value).trim() || "0");
+      if (cents === null) return { error: "Split amounts must be numbers." };
+      if (cents > 0) split.push({ personId: Number(match[1]), amountCents: cents });
+    }
+    if (split.length === 0) return { error: "Enter who put in how much." };
+    const sum = split.reduce((total, s) => total + s.amountCents, 0);
+    if (sum !== amountCents)
+      return {
+        error: `Split adds up to ${(sum / 100).toFixed(2)} but the total is ${(amountCents / 100).toFixed(2)}.`,
+      };
+  }
+  const effectivePayerId = splitMode
+    ? [...split].sort((a, b) => b.amountCents - a.amountCents)[0].personId
+    : payerPersonId;
+  if (!Number.isInteger(effectivePayerId))
     return { error: "Pick who paid." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(billDate))
     return { error: "Pick a date." };
@@ -76,7 +98,7 @@ export async function createManualBill(
         monthId: monthRow.id,
         source: "manual",
         status: "confirmed",
-        payerPersonId,
+        payerPersonId: effectivePayerId,
         billDate,
         grossCents: amountCents,
         discountCents: 0,
@@ -97,6 +119,17 @@ export async function createManualBill(
         ownerPersonId: status === "personal" ? ownerPersonId : null,
       })
       .run();
+    if (split.length > 1) {
+      for (const entry of split) {
+        tx.insert(schema.billPayments)
+          .values({
+            billId: bill.id,
+            personId: entry.personId,
+            amountCents: entry.amountCents,
+          })
+          .run();
+      }
+    }
   });
 
   revalidatePath("/");

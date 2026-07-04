@@ -148,7 +148,7 @@ export default async function BillPage({
 
       <div className="flex items-center justify-between">
         <Link href="/" className="text-sm text-zinc-500 underline">
-          ← back
+          ← Back
         </Link>
         <DeleteBillButton billId={bill.id} disabled={locked} />
       </div>

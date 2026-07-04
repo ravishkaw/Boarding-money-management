@@ -38,20 +38,44 @@ pm2 save
 pm2 startup   # follow the printed instruction once so it survives reboots
 ```
 
-## Subdomain + SSL (cPanel)
+## Subdomain + SSL (nginx — no cPanel needed)
 
-1. cPanel → **Domains** → create `boarding.yourdomain.lk`.
-2. Reverse-proxy it to the app. Easiest on cPanel is an `.htaccess` in the
-   subdomain's document root:
+Same pattern as any other Node backend you host: nginx server block →
+proxy to the app's port → certbot.
 
-   ```apache
-   RewriteEngine On
-   RewriteRule ^(.*)$ http://127.0.0.1:3050/$1 [P,L]
+1. Point a DNS A record for `boarding.yourdomain.lk` at the VPS.
+2. Create the server block:
+
+   ```nginx
+   # /etc/nginx/sites-available/boarding
+   server {
+       listen 80;
+       server_name boarding.yourdomain.lk;
+
+       location / {
+           proxy_pass http://127.0.0.1:3050;
+           proxy_http_version 1.1;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+       }
+   }
    ```
 
-   (If you have root/WHM, a proper Apache/Nginx `ProxyPass` vhost include is
-   cleaner: `ProxyPass / http://127.0.0.1:3050/` + `ProxyPassReverse`.)
-3. Run **AutoSSL** (or certbot) for the subdomain.
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/boarding /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+3. SSL:
+
+   ```bash
+   sudo certbot --nginx -d boarding.yourdomain.lk
+   ```
+
 4. Open `https://boarding.yourdomain.lk`, sign in, go to **Settings**:
    - each person changes their PIN,
    - enter the opening balances for your first month

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { deleteRepayment, recordRepayment } from "@/app/repayments/actions";
 import { formatCents } from "@/lib/money";
+import { ConfirmDialog } from "./modal";
 
 export function MarkPaidButton({
   monthId,
@@ -21,19 +22,34 @@ export function MarkPaidButton({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   return (
     <span className="inline-flex items-center gap-2">
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
-          if (
-            !confirm(
-              `${fromName} handed ${toName} ${formatCents(amountCents)}?`,
-            )
-          )
-            return;
+        onClick={() => setOpen(true)}
+        className="rounded-lg border border-emerald-600 px-2 py-0.5 text-xs font-medium text-emerald-700 disabled:opacity-50 dark:text-emerald-400"
+      >
+        {pending ? "…" : "Mark paid"}
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="Record this payment?"
+        message={
+          <>
+            <span className="font-medium">{fromName}</span> handed{" "}
+            <span className="font-medium">{toName}</span>{" "}
+            <span className="font-semibold">{formatCents(amountCents)}</span> in
+            cash. This counts toward the settlement immediately.
+          </>
+        }
+        confirmLabel="Yes, paid"
+        pending={pending}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => {
+          setOpen(false);
           startTransition(async () => {
             const res = await recordRepayment(
               monthId,
@@ -44,10 +60,7 @@ export function MarkPaidButton({
             setError(res.error ?? null);
           });
         }}
-        className="rounded-lg border border-emerald-600 px-2 py-0.5 text-xs font-medium text-emerald-700 disabled:opacity-50 dark:text-emerald-400"
-      >
-        {pending ? "…" : "Mark paid"}
-      </button>
+      />
       {error && <span className="text-xs text-red-600">{error}</span>}
     </span>
   );
@@ -159,7 +172,7 @@ export function RecordPaymentForm({
           onClick={() => setOpen(false)}
           className="text-zinc-500 underline"
         >
-          cancel
+          Cancel
         </button>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -175,19 +188,32 @@ export function DeleteRepaymentButton({
   disabled: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      disabled={disabled || pending}
-      onClick={() => {
-        if (confirm("Remove this repayment?"))
+    <>
+      <button
+        type="button"
+        disabled={disabled || pending}
+        onClick={() => setOpen(true)}
+        className="text-xs text-red-600 underline disabled:opacity-40"
+      >
+        Undo
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="Remove this payment?"
+        message="The settlement will go back to how it was before this payment was recorded."
+        confirmLabel="Remove"
+        danger
+        pending={pending}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => {
+          setOpen(false);
           startTransition(async () => {
             await deleteRepayment(repaymentId);
           });
-      }}
-      className="text-xs text-red-600 underline disabled:opacity-40"
-    >
-      undo
-    </button>
+        }}
+      />
+    </>
   );
 }

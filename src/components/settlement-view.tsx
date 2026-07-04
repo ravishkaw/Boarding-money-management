@@ -71,17 +71,17 @@ export function SettlementView({
               </div>
               <div className="text-xs text-zinc-500">
                 {p.closingCents === 0
-                  ? "all square"
+                  ? "All square"
                   : p.closingCents > 0
-                    ? `the house owes ${isYou ? "you" : "them"}`
+                    ? `The house owes ${isYou ? "you" : "them"}`
                     : isYou
-                      ? "you owe the house"
-                      : "they owe the house"}
+                      ? "You owe the house"
+                      : "They owe the house"}
               </div>
 
               <details className="mt-3 text-sm" open={isYou}>
                 <summary className="cursor-pointer select-none text-zinc-500">
-                  see the math
+                  See the math
                 </summary>
                 <dl className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
                   <Row

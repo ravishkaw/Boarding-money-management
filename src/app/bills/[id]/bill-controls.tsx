@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog, Modal } from "@/components/modal";
 import {
   confirmBill,
   deleteBill,
@@ -61,7 +62,7 @@ export function PayerPicker({
             onClick={() => setSplitMode(!splitMode)}
             className="text-xs text-emerald-700 underline dark:text-emerald-400"
           >
-            {splitMode ? "single payer" : "split between people…"}
+            {splitMode ? "Single payer" : "Split between people…"}
           </button>
         )}
       </div>
@@ -220,25 +221,74 @@ export function ItemName({
   disabled: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(displayName);
+  const [remember, setRemember] = useState(true);
+
   return (
-    <button
-      type="button"
-      disabled={disabled || pending}
-      title={rawName}
-      onClick={() => {
-        const name = prompt(`Rename "${displayName}"\n(receipt says: ${rawName})`, displayName);
-        if (!name || name.trim() === displayName) return;
-        const remember = confirm(
-          `Always call "${rawName}" → "${name.trim()}" on future bills?`,
-        );
-        startTransition(async () => {
-          await renameItem(itemId, name, remember);
-        });
-      }}
-      className="truncate text-left font-medium underline decoration-dotted underline-offset-2 disabled:no-underline"
-    >
-      {pending ? "…" : displayName}
-    </button>
+    <>
+      <button
+        type="button"
+        disabled={disabled || pending}
+        title={rawName}
+        onClick={() => {
+          setName(displayName);
+          setOpen(true);
+        }}
+        className="truncate text-left font-medium underline decoration-dotted underline-offset-2 disabled:no-underline"
+      >
+        {pending ? "…" : displayName}
+      </button>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Rename item">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = name.trim();
+            setOpen(false);
+            if (!trimmed || trimmed === displayName) return;
+            startTransition(async () => {
+              await renameItem(itemId, trimmed, remember);
+            });
+          }}
+          className="flex flex-col gap-3"
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            className="rounded-xl border border-zinc-300 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <p className="text-xs text-zinc-500">
+            Receipt says: <span className="font-medium">{rawName}</span>
+          </p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="size-4"
+            />
+            Always use this name on future bills
+          </label>
+          <div className="mt-1 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </>
   );
 }
 
@@ -276,17 +326,30 @@ export function DeleteBillButton({
   disabled: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      disabled={disabled || pending}
-      onClick={() => {
-        if (confirm("Delete this bill and all its items?"))
+    <>
+      <button
+        type="button"
+        disabled={disabled || pending}
+        onClick={() => setOpen(true)}
+        className="text-sm text-red-600 underline disabled:opacity-50"
+      >
+        {pending ? "Deleting…" : "Delete bill"}
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="Delete this bill?"
+        message="The bill and all its items will be removed, and the settlement will recalculate."
+        confirmLabel="Delete"
+        danger
+        pending={pending}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => {
+          setOpen(false);
           startTransition(() => deleteBill(billId));
-      }}
-      className="text-sm text-red-600 underline disabled:opacity-50"
-    >
-      {pending ? "Deleting…" : "Delete bill"}
-    </button>
+        }}
+      />
+    </>
   );
 }
