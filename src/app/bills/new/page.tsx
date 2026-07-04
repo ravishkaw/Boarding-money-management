@@ -8,7 +8,7 @@ const PRESETS = [
   { description: "Boarding Fee", amount: "50000" },
   { description: "Boarding Bills", amount: "" },
   { description: "Kottu", amount: "" },
-  { description: "Rice Packets", amount: "" },
+  { description: "Fried Rice", amount: "" },
 ];
 
 export default async function QuickAddPage() {
