@@ -146,6 +146,81 @@ export async function setBillPayer(
   return {};
 }
 
+export async function confirmBill(billId: number): Promise<ActionState> {
+  const session = await getSession();
+  if (!session) return { error: "Not signed in." };
+  const closed = assertOpen(billId);
+  if (closed) return { error: closed };
+
+  const bill = db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, billId))
+    .get();
+  if (!bill) return { error: "Bill not found." };
+  if (bill.payerPersonId == null)
+    return { error: "Pick who paid before confirming." };
+
+  const missingOwner = db
+    .select()
+    .from(schema.billItems)
+    .where(eq(schema.billItems.billId, billId))
+    .all()
+    .some((item) => item.status === "personal" && item.ownerPersonId == null);
+  if (missingOwner)
+    return { error: "A personal item is missing its owner." };
+
+  db.update(schema.bills)
+    .set({ status: "confirmed" })
+    .where(eq(schema.bills.id, billId))
+    .run();
+
+  revalidatePath("/");
+  revalidatePath(`/bills/${billId}`);
+  return {};
+}
+
+export async function renameItem(
+  itemId: number,
+  displayName: string,
+  remember: boolean,
+): Promise<ActionState> {
+  const session = await getSession();
+  if (!session) return { error: "Not signed in." };
+  const name = displayName.trim();
+  if (!name) return { error: "Name can't be empty." };
+
+  const item = db
+    .select()
+    .from(schema.billItems)
+    .where(eq(schema.billItems.id, itemId))
+    .get();
+  if (!item) return { error: "Item not found." };
+  const closed = assertOpen(item.billId);
+  if (closed) return { error: closed };
+
+  db.update(schema.billItems)
+    .set({ displayName: name })
+    .where(eq(schema.billItems.id, itemId))
+    .run();
+
+  if (remember) {
+    const { normalizeMatchKey } = await import("@/lib/keells/parse");
+    const matchKey = item.itemCode ?? normalizeMatchKey(item.rawName);
+    db.insert(schema.itemAliases)
+      .values({ matchKey, friendlyName: name })
+      .onConflictDoUpdate({
+        target: schema.itemAliases.matchKey,
+        set: { friendlyName: name },
+      })
+      .run();
+  }
+
+  revalidatePath(`/bills/${item.billId}`);
+  revalidatePath("/aliases");
+  return {};
+}
+
 export async function deleteBill(billId: number): Promise<void> {
   const session = await getSession();
   if (!session) return;

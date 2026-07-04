@@ -5,7 +5,9 @@ import { db, schema } from "@/db";
 import { getBillWithItems, listPersons } from "@/lib/data";
 import { formatCents, formatCentsPlain } from "@/lib/money";
 import {
+  ConfirmBillButton,
   DeleteBillButton,
+  ItemName,
   ItemStatusControl,
   PayerPicker,
 } from "./bill-controls";
@@ -47,6 +49,14 @@ export default async function BillPage({
         </p>
       </div>
 
+      {bill.status === "draft" && !locked && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          <strong>Review this bill.</strong> Check who paid, tap an item name
+          to rename it, mark personal items, then confirm. Drafts don&apos;t
+          count in the settlement.
+        </div>
+      )}
+
       <PayerPicker
         billId={bill.id}
         people={people}
@@ -58,12 +68,17 @@ export default async function BillPage({
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {bill.items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div
-                  className={`truncate font-medium ${item.status === "excluded" ? "text-zinc-400 line-through" : ""}`}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span
+                  className={item.status === "excluded" ? "text-zinc-400 line-through" : ""}
                 >
-                  {item.displayName}
-                </div>
+                  <ItemName
+                    itemId={item.id}
+                    displayName={item.displayName}
+                    rawName={item.rawName}
+                    disabled={locked}
+                  />
+                </span>
                 <div className="text-xs text-zinc-500">
                   {item.quantity} × {formatCentsPlain(item.unitPriceCents)}
                 </div>
@@ -98,6 +113,10 @@ export default async function BillPage({
           </div>
         </div>
       </section>
+
+      {bill.status === "draft" && !locked && (
+        <ConfirmBillButton billId={bill.id} />
+      )}
 
       <div className="flex items-center justify-between">
         <Link href="/" className="text-sm text-zinc-500 underline">

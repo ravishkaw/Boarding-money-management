@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { deleteBill, setBillPayer, setItemStatus } from "../actions";
+import { useRouter } from "next/navigation";
+import {
+  confirmBill,
+  deleteBill,
+  renameItem,
+  setBillPayer,
+  setItemStatus,
+} from "../actions";
 
 type PersonOption = { id: number; name: string };
 
@@ -104,6 +111,66 @@ export function ItemStatusControl({
         <option value="excluded">Exclude</option>
       </select>
       {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+export function ItemName({
+  itemId,
+  displayName,
+  rawName,
+  disabled,
+}: {
+  itemId: number;
+  displayName: string;
+  rawName: string;
+  disabled: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={disabled || pending}
+      title={rawName}
+      onClick={() => {
+        const name = prompt(`Rename "${displayName}"\n(receipt says: ${rawName})`, displayName);
+        if (!name || name.trim() === displayName) return;
+        const remember = confirm(
+          `Always call "${rawName}" → "${name.trim()}" on future bills?`,
+        );
+        startTransition(async () => {
+          await renameItem(itemId, name, remember);
+        });
+      }}
+      className="truncate text-left font-medium underline decoration-dotted underline-offset-2 disabled:no-underline"
+    >
+      {pending ? "…" : displayName}
+    </button>
+  );
+}
+
+export function ConfirmBillButton({ billId }: { billId: number }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            const res = await confirmBill(billId);
+            if (res.error) setError(res.error);
+            else router.push("/");
+          })
+        }
+        className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-lg font-semibold text-white disabled:opacity-40"
+      >
+        {pending ? "Confirming…" : "Confirm bill"}
+      </button>
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }
