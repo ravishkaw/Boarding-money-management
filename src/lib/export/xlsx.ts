@@ -79,6 +79,7 @@ export async function buildMonthWorkbook(
     { header: "Price per unit", key: "unit", width: 14 },
     { header: "Quantity", key: "qty", width: 10 },
     { header: "Price", key: "total", width: 14 },
+    { header: "Discount", key: "discount", width: 12 },
     { header: "Status", key: "status", width: 12 },
     { header: "Owner", key: "owner", width: 20 },
   ];
@@ -98,6 +99,7 @@ export async function buildMonthWorkbook(
         unit: rs(item.unitPriceCents),
         qty: item.quantity,
         total: rs(item.lineTotalCents),
+        discount: item.discountCents > 0 ? rs(item.discountCents) : "",
         status: item.status,
         owner: item.status === "personal" ? nameOf(item.ownerPersonId) : "",
       });
@@ -105,6 +107,7 @@ export async function buildMonthWorkbook(
   }
   itemsSheet.getColumn("E").numFmt = CURRENCY_FMT;
   itemsSheet.getColumn("G").numFmt = CURRENCY_FMT;
+  itemsSheet.getColumn("H").numFmt = CURRENCY_FMT;
 
   // ---- Item Totals (the old pivot table) -----------------------------------
   const totals = new Map<string, { qty: number; cents: number }>();
@@ -114,7 +117,7 @@ export async function buildMonthWorkbook(
       if (item.status === "excluded") continue;
       const entry = totals.get(item.displayName) ?? { qty: 0, cents: 0 };
       entry.qty += item.quantity;
-      entry.cents += item.lineTotalCents;
+      entry.cents += item.lineTotalCents - item.discountCents;
       totals.set(item.displayName, entry);
     }
   }

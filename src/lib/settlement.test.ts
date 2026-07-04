@@ -42,6 +42,34 @@ describe("effectiveCosts", () => {
     expect(costs.reduce((a, b) => a + b, 0)).toBe(1000 - 100);
   });
 
+  it("takes item-wise discounts off their own line, prorates only the rest", () => {
+    // Receipt: 300 (25% off = 75 item-wise) + 100, plus a 10 receipt-level discount.
+    const bill: SettleBill = {
+      payerPersonId: A,
+      discountCents: 85, // 75 item-wise + 10 receipt-level
+      items: [
+        { lineTotalCents: 300, discountCents: 75, status: "shared" },
+        { lineTotalCents: 100, status: "shared" },
+      ],
+    };
+    const costs = effectiveCosts(bill);
+    // bases: 225 and 100; remaining 10 prorated: round(10*225/325)=7, last absorbs 3
+    expect(costs).toEqual([218, 97]);
+    expect(costs.reduce((a, b) => a + b, 0)).toBe(400 - 85);
+  });
+
+  it("keeps a discounted item's own discount when another item is excluded", () => {
+    const bill: SettleBill = {
+      payerPersonId: A,
+      discountCents: 75,
+      items: [
+        { lineTotalCents: 300, discountCents: 75, status: "shared" },
+        { lineTotalCents: 500, status: "excluded" },
+      ],
+    };
+    expect(effectiveCosts(bill)).toEqual([225, 0]);
+  });
+
   it("gives excluded items zero cost and no discount share", () => {
     const bill: SettleBill = {
       payerPersonId: A,
@@ -105,6 +133,30 @@ describe("settle", () => {
     expect(p.deltaCents).toBe(0 - 66667 - 45000);
     expect(r.deltaCents).toBe(0 - 66666);
     expect(s.persons.reduce((sum, x) => sum + x.deltaCents, 0)).toBe(0);
+  });
+
+  it("applies repayments: 'Pahasara paid Aditha back' zeroes the debt", () => {
+    // Aditha pays Pahasara's 450.00 personal item, then Pahasara repays in cash.
+    const s = settle({
+      personIds: [A, P, R],
+      bills: [
+        {
+          payerPersonId: A,
+          discountCents: 0,
+          items: [
+            { lineTotalCents: 45000, status: "personal", ownerPersonId: P },
+          ],
+        },
+      ],
+      repayments: [{ fromPersonId: P, toPersonId: A, amountCents: 45000 }],
+    });
+    const [a, p, r] = s.persons;
+    expect(a.repaidCents).toBe(-45000);
+    expect(p.repaidCents).toBe(45000);
+    expect(a.closingCents).toBe(0);
+    expect(p.closingCents).toBe(0);
+    expect(r.closingCents).toBe(0);
+    expect(s.transfers).toEqual([]);
   });
 
   it("throws when a personal item has no owner", () => {

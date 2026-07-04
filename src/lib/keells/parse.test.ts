@@ -46,6 +46,45 @@ describe("parseKeellsBill (real 20-Jun-2026 receipt)", () => {
   });
 });
 
+describe("parseKeellsBill (03-Jun-2026 receipt with item-wise promotions)", () => {
+  const promoHtml = readFileSync(
+    join(__dirname, "__fixtures__", "sample-bill-promo.html"),
+    "utf8",
+  );
+  const bill = parseKeellsBill(promoHtml);
+
+  it("reads all 19 items", () => {
+    expect(bill.items).toHaveLength(19);
+  });
+
+  it("attributes promotions to their lines (25% off KIST → 75.00 on line 15)", () => {
+    const kist = bill.items.find((i) => i.lineNo === 15);
+    expect(kist).toMatchObject({
+      itemCode: "127671",
+      lineTotalCents: 30000,
+      discountCents: 7500,
+    });
+    expect(kist?.discountNote).toMatch(/25\.00% Dis/);
+    const marie = bill.items.find((i) => i.lineNo === 14);
+    expect(marie?.discountCents).toBe(2700);
+    const yoghurt = bill.items.find((i) => i.lineNo === 6);
+    expect(yoghurt?.discountCents).toBe(3400);
+    const capsicum = bill.items.find((i) => i.lineNo === 11);
+    expect(capsicum?.discountCents).toBe(1800);
+  });
+
+  it("totals reconcile: gross 4,014.98 − 154.00 promos = net 3,860.98", () => {
+    expect(bill.grossCents).toBe(401498);
+    expect(bill.totalDiscountCents).toBe(15400);
+    expect(bill.netCents).toBe(386098);
+    // the restated "Promotion Discount"/"Total savings" rows must not double-count
+    expect(bill.discounts).toEqual([]);
+    expect(
+      bill.warnings.filter((w) => !w.includes("duplicate detection")),
+    ).toEqual([]);
+  });
+});
+
 describe("helpers", () => {
   it("titleCase", () => {
     expect(titleCase("EH I/C WONDER CONE FALUDA 120ML")).toBe(

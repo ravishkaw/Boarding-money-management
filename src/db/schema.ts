@@ -78,6 +78,9 @@ export const billItems = sqliteTable("bill_item", {
   unitPriceCents: integer("unit_price_cents").notNull(),
   quantity: real("quantity").notNull(),
   lineTotalCents: integer("line_total_cents").notNull(),
+  /** Item-wise (promotion) discount taken off this line, e.g. "25.00% Dis" */
+  discountCents: integer("discount_cents").notNull().default(0),
+  discountNote: text("discount_note"),
   status: text("status", { enum: ["shared", "personal", "excluded"] })
     .notNull()
     .default("shared"),
@@ -93,6 +96,24 @@ export const billDiscounts = sqliteTable("bill_discount", {
   amountCents: integer("amount_cents").notNull(),
 });
 
+export const repayments = sqliteTable("repayment", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  monthId: integer("month_id")
+    .notNull()
+    .references(() => months.id),
+  fromPersonId: integer("from_person_id")
+    .notNull()
+    .references(() => persons.id),
+  toPersonId: integer("to_person_id")
+    .notNull()
+    .references(() => persons.id),
+  amountCents: integer("amount_cents").notNull(),
+  paidDate: text("paid_date").notNull(), // ISO date
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 export const itemAliases = sqliteTable("item_alias", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   // item_code when the source provides one, else the normalized raw name
@@ -106,4 +127,5 @@ export type OpeningBalance = typeof openingBalances.$inferSelect;
 export type Bill = typeof bills.$inferSelect;
 export type BillItem = typeof billItems.$inferSelect;
 export type BillDiscount = typeof billDiscounts.$inferSelect;
+export type Repayment = typeof repayments.$inferSelect;
 export type ItemAlias = typeof itemAliases.$inferSelect;

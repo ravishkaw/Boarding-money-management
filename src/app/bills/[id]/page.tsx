@@ -82,9 +82,24 @@ export default async function BillPage({
                 <div className="text-xs text-zinc-500">
                   {item.quantity} × {formatCentsPlain(item.unitPriceCents)}
                 </div>
+                {item.discountCents > 0 && (
+                  <div className="text-xs text-emerald-700 dark:text-emerald-400">
+                    {item.discountNote ?? "Discount"} −
+                    {formatCentsPlain(item.discountCents)}
+                  </div>
+                )}
               </div>
               <div className="shrink-0 text-right font-semibold">
-                {formatCentsPlain(item.lineTotalCents)}
+                {item.discountCents > 0 ? (
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs text-zinc-400 line-through">
+                      {formatCentsPlain(item.lineTotalCents)}
+                    </span>
+                    {formatCentsPlain(item.lineTotalCents - item.discountCents)}
+                  </div>
+                ) : (
+                  formatCentsPlain(item.lineTotalCents)
+                )}
               </div>
               <ItemStatusControl
                 itemId={item.id}

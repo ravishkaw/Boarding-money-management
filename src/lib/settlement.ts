@@ -11,14 +11,23 @@ export type ItemStatus = "shared" | "personal" | "excluded";
 
 export type SettleItem = {
   lineTotalCents: number;
+  /** Item-wise (promotion) discount already attributed to this line. */
+  discountCents?: number;
   status: ItemStatus;
   ownerPersonId?: number | null;
 };
 
 export type SettleBill = {
   payerPersonId: number;
+  /** TOTAL bill discount (item-wise + receipt-level). */
   discountCents: number;
   items: SettleItem[];
+};
+
+export type SettleRepayment = {
+  fromPersonId: number;
+  toPersonId: number;
+  amountCents: number;
 };
 
 export type SettleInput = {
@@ -28,6 +37,8 @@ export type SettleInput = {
   bills: SettleBill[];
   /** openingCents per personId; missing = 0. +ve = house owes them. */
   openings?: Map<number, number>;
+  /** Cash settle-ups recorded this month. */
+  repayments?: SettleRepayment[];
 };
 
 export type PersonSettlement = {
@@ -36,7 +47,9 @@ export type PersonSettlement = {
   paidCents: number;
   fairShareCents: number;
   personalCents: number;
-  /** paid − fairShare − personal (this month's movement) */
+  /** repayments made − repayments received */
+  repaidCents: number;
+  /** paid − fairShare − personal + repaid (this month's movement) */
   deltaCents: number;
   /** opening + delta */
   closingCents: number;
@@ -56,32 +69,39 @@ export type Settlement = {
 };
 
 /**
- * Effective cost per item: the bill discount is prorated across included
- * (non-excluded) items by line total; the last included item absorbs the
- * rounding remainder so the bill sums exactly to gross − discount.
+ * Effective cost per item. Item-wise discounts come straight off their own
+ * line; any remaining receipt-level discount (total − Σ item-wise) is
+ * prorated across included (non-excluded) items, with the last included item
+ * absorbing the rounding remainder so the bill sums exactly.
  */
 export function effectiveCosts(bill: SettleBill): number[] {
+  const base = bill.items.map(
+    (item) => item.lineTotalCents - (item.discountCents ?? 0),
+  );
   const included = bill.items
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => item.status !== "excluded");
-  const includedTotal = included.reduce(
-    (sum, { item }) => sum + item.lineTotalCents,
+  const includedTotal = included.reduce((sum, { index }) => sum + base[index], 0);
+
+  const itemwiseTotal = bill.items.reduce(
+    (sum, item) => sum + (item.discountCents ?? 0),
     0,
   );
+  const remaining = Math.max(0, bill.discountCents - itemwiseTotal);
 
   const costs = bill.items.map(() => 0);
-  if (includedTotal <= 0 || bill.discountCents === 0) {
-    for (const { item, index } of included) costs[index] = item.lineTotalCents;
+  if (includedTotal <= 0 || remaining === 0) {
+    for (const { index } of included) costs[index] = base[index];
     return costs;
   }
 
-  let discountLeft = bill.discountCents;
-  included.forEach(({ item, index }, i) => {
+  let discountLeft = remaining;
+  included.forEach(({ index }, i) => {
     const share =
       i === included.length - 1
         ? discountLeft
-        : Math.round((bill.discountCents * item.lineTotalCents) / includedTotal);
-    costs[index] = item.lineTotalCents - share;
+        : Math.round((remaining * base[index]) / includedTotal);
+    costs[index] = base[index] - share;
     discountLeft -= share;
   });
   return costs;
@@ -114,6 +134,12 @@ export function settle(input: SettleInput): Settlement {
     });
   }
 
+  const repaid = new Map<number, number>(personIds.map((id) => [id, 0]));
+  for (const r of input.repayments ?? []) {
+    repaid.set(r.fromPersonId, (repaid.get(r.fromPersonId) ?? 0) + r.amountCents);
+    repaid.set(r.toPersonId, (repaid.get(r.toPersonId) ?? 0) - r.amountCents);
+  }
+
   // Split the pool; the first `remainder` persons (display order) pay 1 extra cent.
   const base = Math.floor(sharedPool / n);
   const remainder = sharedPool - base * n;
@@ -123,13 +149,15 @@ export function settle(input: SettleInput): Settlement {
     const paidCents = paid.get(personId) ?? 0;
     const personalCents = personal.get(personId) ?? 0;
     const openingCents = openings.get(personId) ?? 0;
-    const deltaCents = paidCents - fairShareCents - personalCents;
+    const repaidCents = repaid.get(personId) ?? 0;
+    const deltaCents = paidCents - fairShareCents - personalCents + repaidCents;
     return {
       personId,
       openingCents,
       paidCents,
       fairShareCents,
       personalCents,
+      repaidCents,
       deltaCents,
       closingCents: openingCents + deltaCents,
     };

@@ -100,10 +100,20 @@ function toSettleBills(bills: BillWithItems[]): SettleBill[] {
       discountCents: b.discountCents,
       items: b.items.map((item) => ({
         lineTotalCents: item.lineTotalCents,
+        discountCents: item.discountCents,
         status: item.status,
         ownerPersonId: item.ownerPersonId,
       })),
     }));
+}
+
+export function listRepaymentsForMonth(monthId: number) {
+  return db
+    .select()
+    .from(schema.repayments)
+    .where(eq(schema.repayments.monthId, monthId))
+    .orderBy(asc(schema.repayments.paidDate), asc(schema.repayments.id))
+    .all();
 }
 
 function previousMonth(month: Month): Month | undefined {
@@ -162,6 +172,11 @@ export function settleMonth(
     personIds: persons.map((p) => p.id),
     bills: toSettleBills(listBillsForMonth(month.id)),
     openings: openingBalancesFor(month, persons, depth),
+    repayments: listRepaymentsForMonth(month.id).map((r) => ({
+      fromPersonId: r.fromPersonId,
+      toPersonId: r.toPersonId,
+      amountCents: r.amountCents,
+    })),
   });
 }
 

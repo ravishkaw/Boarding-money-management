@@ -40,7 +40,9 @@ export async function createManualBill(
   if (!session) return { error: "Not signed in." };
 
   const description = String(formData.get("description") ?? "").trim();
-  const amountCents = parseAmount(String(formData.get("amount") ?? ""));
+  const unitPriceCents = parseAmount(String(formData.get("unitPrice") ?? ""));
+  const qtyRaw = String(formData.get("quantity") ?? "1").trim() || "1";
+  const quantity = /^\d+(\.\d{1,3})?$/.test(qtyRaw) ? Number(qtyRaw) : null;
   const payerPersonId = Number(formData.get("payerPersonId"));
   const billDate = String(formData.get("billDate") ?? "");
   const status = String(formData.get("status") ?? "shared") as
@@ -50,8 +52,11 @@ export async function createManualBill(
   const ownerPersonId = ownerRaw ? Number(ownerRaw) : null;
 
   if (!description) return { error: "Give it a description." };
-  if (amountCents === null || amountCents <= 0)
-    return { error: "Enter a valid amount." };
+  if (unitPriceCents === null || unitPriceCents <= 0)
+    return { error: "Enter a valid price." };
+  if (quantity === null || quantity <= 0)
+    return { error: "Enter a valid quantity." };
+  const amountCents = Math.round(unitPriceCents * quantity);
   if (!Number.isInteger(payerPersonId))
     return { error: "Pick who paid." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(billDate))
@@ -85,8 +90,8 @@ export async function createManualBill(
         lineNo: 1,
         rawName: description,
         displayName: description,
-        unitPriceCents: amountCents,
-        quantity: 1,
+        unitPriceCents,
+        quantity,
         lineTotalCents: amountCents,
         status,
         ownerPersonId: status === "personal" ? ownerPersonId : null,

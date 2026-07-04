@@ -1,13 +1,23 @@
-import type { Person } from "@/db/schema";
+import type { Person, Repayment } from "@/db/schema";
 import type { Settlement } from "@/lib/settlement";
 import { formatCents } from "@/lib/money";
+import {
+  DeleteRepaymentButton,
+  MarkPaidButton,
+} from "./repayment-controls";
 
 export function SettlementView({
   settlement,
   persons,
+  monthId,
+  editable = false,
+  repayments = [],
 }: {
   settlement: Settlement;
   persons: Person[];
+  monthId?: number;
+  editable?: boolean;
+  repayments?: Repayment[];
 }) {
   const nameOf = (id: number) =>
     persons.find((p) => p.id === id)?.name.split(" ")[0] ?? `#${id}`;
@@ -28,6 +38,12 @@ export function SettlementView({
               {p.personalCents !== 0 && (
                 <Row label="Personal" value={-p.personalCents} />
               )}
+              {p.repaidCents !== 0 && (
+                <Row
+                  label={p.repaidCents > 0 ? "Settled up (paid)" : "Settled up (got)"}
+                  value={p.repaidCents}
+                />
+              )}
             </dl>
             <div
               className={`mt-3 text-xl font-bold ${
@@ -46,15 +62,50 @@ export function SettlementView({
       {settlement.transfers.length > 0 && (
         <div className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
           <h3 className="mb-2 font-semibold">To settle up now</h3>
-          <ul className="space-y-1 text-sm">
+          <ul className="space-y-2 text-sm">
             {settlement.transfers.map((t, i) => (
-              <li key={i}>
-                <span className="font-medium">{nameOf(t.fromPersonId)}</span>
-                {" pays "}
-                <span className="font-medium">{nameOf(t.toPersonId)}</span>{" "}
-                <span className="font-semibold">
-                  {formatCents(t.amountCents)}
+              <li key={i} className="flex flex-wrap items-center gap-x-2">
+                <span>
+                  <span className="font-medium">{nameOf(t.fromPersonId)}</span>
+                  {" pays "}
+                  <span className="font-medium">{nameOf(t.toPersonId)}</span>{" "}
+                  <span className="font-semibold">
+                    {formatCents(t.amountCents)}
+                  </span>
                 </span>
+                {editable && monthId !== undefined && (
+                  <MarkPaidButton
+                    monthId={monthId}
+                    fromPersonId={t.fromPersonId}
+                    toPersonId={t.toPersonId}
+                    amountCents={t.amountCents}
+                    fromName={nameOf(t.fromPersonId)}
+                    toName={nameOf(t.toPersonId)}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {repayments.length > 0 && (
+        <div className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+          <h3 className="mb-2 font-semibold">Settled this month</h3>
+          <ul className="space-y-1 text-sm">
+            {repayments.map((r) => (
+              <li key={r.id} className="flex items-center gap-2">
+                <span className="flex-1">
+                  {r.paidDate} · {nameOf(r.fromPersonId)} paid{" "}
+                  {nameOf(r.toPersonId)}{" "}
+                  <span className="font-semibold">
+                    {formatCents(r.amountCents)}
+                  </span>
+                </span>
+                <DeleteRepaymentButton
+                  repaymentId={r.id}
+                  disabled={!editable}
+                />
               </li>
             ))}
           </ul>

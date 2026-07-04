@@ -22,8 +22,16 @@ export function QuickAddForm({
     {},
   );
   const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [quantity, setQuantity] = useState("1");
   const [personal, setPersonal] = useState(false);
+
+  const priceNum = Number(unitPrice.replace(/,/g, ""));
+  const qtyNum = Number(quantity);
+  const total =
+    priceNum > 0 && qtyNum > 0
+      ? Math.round(priceNum * qtyNum * 100) / 100
+      : null;
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -34,7 +42,8 @@ export function QuickAddForm({
             type="button"
             onClick={() => {
               setDescription(preset.description);
-              setAmount(preset.amount);
+              setUnitPrice(preset.amount);
+              setQuantity("1");
             }}
             className="rounded-full border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
           >
@@ -55,18 +64,39 @@ export function QuickAddForm({
         />
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">Amount (Rs.)</span>
-        <input
-          name="amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          inputMode="decimal"
-          placeholder="1500.00"
-          required
-          className="rounded-xl border border-zinc-300 px-4 py-3 text-lg dark:border-zinc-700 dark:bg-zinc-900"
-        />
-      </label>
+      <div className="grid grid-cols-[2fr_1fr] gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium">Price (Rs.)</span>
+          <input
+            name="unitPrice"
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(e.target.value)}
+            inputMode="decimal"
+            placeholder="1500.00"
+            required
+            className="rounded-xl border border-zinc-300 px-4 py-3 text-lg dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium">Qty</span>
+          <input
+            name="quantity"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            inputMode="decimal"
+            placeholder="1"
+            className="rounded-xl border border-zinc-300 px-4 py-3 text-lg dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </label>
+      </div>
+      {total !== null && qtyNum !== 1 && (
+        <p className="text-sm text-zinc-500">
+          Total:{" "}
+          <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+            Rs. {total.toLocaleString("en-LK")}
+          </span>
+        </p>
+      )}
 
       <fieldset className="flex flex-col gap-1">
         <legend className="text-sm font-medium">Who paid?</legend>

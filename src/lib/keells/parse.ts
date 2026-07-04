@@ -7,6 +7,9 @@ export type ParsedItem = {
   unitPriceCents: number;
   quantity: number;
   lineTotalCents: number;
+  /** Item-wise promotion discount attributed to this line (e.g. "25.00% Dis"). */
+  discountCents: number;
+  discountNote: string | null;
 };
 
 export type ParsedDiscount = { description: string; amountCents: number };
@@ -20,7 +23,10 @@ export type ParsedBill = {
   /** Stable content-derived ref for duplicate detection */
   transactionRef: string | null;
   items: ParsedItem[];
+  /** Receipt-level discounts NOT attributed to a specific line. */
   discounts: ParsedDiscount[];
+  /** Item-wise + receipt-level. */
+  totalDiscountCents: number;
   grossCents: number | null;
   netCents: number | null;
   warnings: string[];
@@ -127,33 +133,68 @@ export function parseKeellsBill(html: string): ParsedBill {
       unitPriceCents,
       quantity,
       lineTotalCents,
+      discountCents: 0,
+      discountNote: null,
     });
   });
   if (items.length === 0) warnings.push("No line items found on this bill.");
 
-  // ---- Totals: gross, discounts, net --------------------------------------
+  // ---- Item-wise promotion rows -------------------------------------------
+  // Under "Exclusive deals for you" / "Keells Deals": 4 cells per row —
+  // line no, item code, description ("25.00% Dis"), amount.
+  const byLineNo = new Map(items.map((item) => [item.lineNo, item]));
+  $("tr").each((_, row) => {
+    const cells = $(row).children("td");
+    if (cells.length !== 4) return;
+    const lineNo = Number(cells.eq(0).text().trim());
+    const code = cells.eq(1).text().trim();
+    const note = cells.eq(2).text().trim();
+    const amount = parseCents(cells.eq(3).text().trim());
+    if (!Number.isInteger(lineNo) || amount === null || !/^\d{3,8}$/.test(code))
+      return;
+    const item = byLineNo.get(lineNo);
+    if (!item || (item.itemCode && item.itemCode !== code)) {
+      warnings.push(
+        `Promotion "${note}" (line ${lineNo}, ${code}) doesn't match any item.`,
+      );
+      return;
+    }
+    item.discountCents += Math.abs(amount);
+    item.discountNote = item.discountNote ? `${item.discountNote}; ${note}` : note;
+  });
+  const itemwiseDiscount = items.reduce((sum, i) => sum + i.discountCents, 0);
+
+  // ---- Totals: gross, receipt-level discounts, net -------------------------
   let grossCents: number | null = null;
   let netCents: number | null = null;
-  const discounts: ParsedDiscount[] = [];
+  const labeledDiscounts: ParsedDiscount[] = [];
 
   $("tr").each((_, row) => {
     const cells = $(row).children("td");
-    if (cells.length < 2) return;
+    if (cells.length < 2 || cells.length === 4) return;
     const label = cells.first().text().trim();
     const amount = parseCents(cells.last().text().trim());
     if (amount === null || !label) return;
     if (/gross/i.test(label)) grossCents = amount;
     else if (/net\s*amount/i.test(label)) netCents = amount;
     else if (/discount|saving/i.test(label))
-      discounts.push({ description: label, amountCents: Math.abs(amount) });
+      labeledDiscounts.push({ description: label, amountCents: Math.abs(amount) });
   });
 
+  // Rows like "Promotion Discount" / "Total promotion(s) savings" restate the
+  // item-wise total — drop them so nothing double-counts.
+  const discounts = labeledDiscounts.filter(
+    (d) =>
+      !(/promotion/i.test(d.description) && d.amountCents === itemwiseDiscount),
+  );
+
+  const totalDiscountCents =
+    itemwiseDiscount + discounts.reduce((sum, d) => sum + d.amountCents, 0);
   const itemSum = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
-  const discountSum = discounts.reduce((sum, d) => sum + d.amountCents, 0);
-  if (netCents !== null && Math.abs(itemSum - discountSum - netCents) > 5) {
+  if (netCents !== null && Math.abs(itemSum - totalDiscountCents - netCents) > 5) {
     warnings.push(
       `Items minus discounts don't add up to the net amount (off by ${
-        (itemSum - discountSum - netCents) / 100
+        (itemSum - totalDiscountCents - netCents) / 100
       }).`,
     );
   }
@@ -166,8 +207,9 @@ export function parseKeellsBill(html: string): ParsedBill {
     transactionRef,
     items,
     discounts,
+    totalDiscountCents,
     grossCents: grossCents ?? itemSum,
-    netCents: netCents ?? itemSum - discountSum,
+    netCents: netCents ?? itemSum - totalDiscountCents,
     warnings,
   };
 }

@@ -6,6 +6,7 @@ import {
   getMonth,
   listBillsForMonth,
   listPersons,
+  listRepaymentsForMonth,
   monthLabel,
   parseYmSlug,
   settleMonth,
@@ -38,7 +39,7 @@ export default async function MonthPage({
       if (item.status === "excluded") continue;
       const entry = itemTotals.get(item.displayName) ?? { qty: 0, cents: 0 };
       entry.qty += item.quantity;
-      entry.cents += item.lineTotalCents;
+      entry.cents += item.lineTotalCents - item.discountCents;
       itemTotals.set(item.displayName, entry);
     }
   }
@@ -74,7 +75,13 @@ export default async function MonthPage({
         </div>
       </div>
 
-      <SettlementView settlement={settlement} persons={persons} />
+      <SettlementView
+        settlement={settlement}
+        persons={persons}
+        monthId={month.id}
+        editable={month.status === "open"}
+        repayments={listRepaymentsForMonth(month.id)}
+      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold">Bills</h2>

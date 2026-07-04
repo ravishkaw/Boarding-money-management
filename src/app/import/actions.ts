@@ -11,7 +11,10 @@ import {
   titleCase,
 } from "@/lib/keells/parse";
 
-const ALLOWED_HOSTS = new Set(["digibillaccess.keellssuper.com"]);
+const ALLOWED_HOSTS = new Set([
+  "digibillaccess.keellssuper.com",
+  "digibill.keellssuper.com", // short links, redirect to digibillaccess
+]);
 
 export type ImportState = { error?: string; existingBillId?: number };
 
@@ -99,10 +102,7 @@ export async function importBill(
       : [];
   const aliasMap = new Map(aliases.map((a) => [a.matchKey, a.friendlyName]));
 
-  const discountCents = parsed.discounts.reduce(
-    (sum, d) => sum + d.amountCents,
-    0,
-  );
+  const discountCents = parsed.totalDiscountCents;
   const grossCents = parsed.items.reduce(
     (sum, item) => sum + item.lineTotalCents,
     0,
@@ -140,6 +140,8 @@ export async function importBill(
           unitPriceCents: item.unitPriceCents,
           quantity: item.quantity,
           lineTotalCents: item.lineTotalCents,
+          discountCents: item.discountCents,
+          discountNote: item.discountNote,
           status: "shared",
         })
         .run();

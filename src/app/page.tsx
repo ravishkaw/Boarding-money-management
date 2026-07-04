@@ -6,6 +6,7 @@ import {
   getOrCreateMonth,
   listBillsForMonth,
   listPersons,
+  listRepaymentsForMonth,
   monthLabel,
   settleMonth,
 } from "@/lib/data";
@@ -43,7 +44,13 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <SettlementView settlement={settlement} persons={persons} />
+      <SettlementView
+        settlement={settlement}
+        persons={persons}
+        monthId={monthRow.id}
+        editable={monthRow.status === "open"}
+        repayments={listRepaymentsForMonth(monthRow.id)}
+      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold">This month&apos;s bills</h2>

@@ -32,13 +32,14 @@ export function fetchBillHtml(
           redirectsLeft > 0
         ) {
           res.resume();
-          resolve(
-            fetchBillHtml(
-              new URL(res.headers.location, url),
-              timeoutMs,
-              redirectsLeft - 1,
-            ),
-          );
+          const target = new URL(res.headers.location, url);
+          // short links (digibill.keellssuper.com) redirect to the blob URL;
+          // never follow a redirect off the Keells domain
+          if (!target.hostname.endsWith(".keellssuper.com")) {
+            reject(new Error(`redirect to unexpected host ${target.hostname}`));
+            return;
+          }
+          resolve(fetchBillHtml(target, timeoutMs, redirectsLeft - 1));
           return;
         }
         const chunks: Buffer[] = [];
