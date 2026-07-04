@@ -24,7 +24,7 @@ mkdir -p ~/boarding-data
 cat > .env.local <<EOF
 DATABASE_PATH=/home/<user>/boarding-data/boarding.db
 AUTH_SECRET=$(openssl rand -hex 32)
-PORT=3050
+PORT=5050
 EOF
 
 # 5. Create tables + the 3 people (default PIN 0000 — change in Settings!)
@@ -53,7 +53,7 @@ proxy to the app's port → certbot.
        server_name boarding.yourdomain.lk;
 
        location / {
-           proxy_pass http://127.0.0.1:3050;
+           proxy_pass http://127.0.0.1:5050;
            proxy_http_version 1.1;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
