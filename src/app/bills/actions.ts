@@ -141,10 +141,74 @@ export async function setBillPayer(
   const closed = assertOpen(billId);
   if (closed) return { error: closed };
 
-  db.update(schema.bills)
-    .set({ payerPersonId })
+  db.transaction((tx) => {
+    // single payer: drop any split rows
+    tx.delete(schema.billPayments)
+      .where(eq(schema.billPayments.billId, billId))
+      .run();
+    tx.update(schema.bills)
+      .set({ payerPersonId })
+      .where(eq(schema.bills.id, billId))
+      .run();
+  });
+
+  revalidatePath("/");
+  revalidatePath(`/bills/${billId}`);
+  return {};
+}
+
+export async function setBillSplit(
+  billId: number,
+  split: { personId: number; amountCents: number }[],
+): Promise<ActionState> {
+  const session = await getSession();
+  if (!session) return { error: "Not signed in." };
+  const closed = assertOpen(billId);
+  if (closed) return { error: closed };
+
+  const bill = db
+    .select()
+    .from(schema.bills)
     .where(eq(schema.bills.id, billId))
-    .run();
+    .get();
+  if (!bill) return { error: "Bill not found." };
+
+  const entries = split.filter(
+    (s) => Number.isInteger(s.amountCents) && s.amountCents > 0,
+  );
+  if (entries.length === 0) return { error: "Enter at least one amount." };
+  const sum = entries.reduce((total, s) => total + s.amountCents, 0);
+  if (sum !== bill.netCents)
+    return {
+      error: `Shares add up to ${(sum / 100).toFixed(2)} but the bill is ${(bill.netCents / 100).toFixed(2)}.`,
+    };
+
+  const primary = [...entries].sort((a, b) => b.amountCents - a.amountCents)[0];
+  db.transaction((tx) => {
+    tx.delete(schema.billPayments)
+      .where(eq(schema.billPayments.billId, billId))
+      .run();
+    if (entries.length === 1) {
+      tx.update(schema.bills)
+        .set({ payerPersonId: entries[0].personId })
+        .where(eq(schema.bills.id, billId))
+        .run();
+      return;
+    }
+    for (const entry of entries) {
+      tx.insert(schema.billPayments)
+        .values({
+          billId,
+          personId: entry.personId,
+          amountCents: entry.amountCents,
+        })
+        .run();
+    }
+    tx.update(schema.bills)
+      .set({ payerPersonId: primary.personId })
+      .where(eq(schema.bills.id, billId))
+      .run();
+  });
 
   revalidatePath("/");
   revalidatePath(`/bills/${billId}`);
@@ -241,6 +305,9 @@ export async function deleteBill(billId: number): Promise<void> {
       .run();
     tx.delete(schema.billDiscounts)
       .where(eq(schema.billDiscounts.billId, billId))
+      .run();
+    tx.delete(schema.billPayments)
+      .where(eq(schema.billPayments.billId, billId))
       .run();
     tx.delete(schema.bills).where(eq(schema.bills.id, billId)).run();
   });

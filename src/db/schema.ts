@@ -87,6 +87,22 @@ export const billItems = sqliteTable("bill_item", {
   ownerPersonId: integer("owner_person_id").references(() => persons.id),
 });
 
+/**
+ * Who actually handed over money for a bill. Only present when a bill was
+ * paid by more than one person; single-payer bills just use
+ * bill.payer_person_id.
+ */
+export const billPayments = sqliteTable("bill_payment", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  billId: integer("bill_id")
+    .notNull()
+    .references(() => bills.id, { onDelete: "cascade" }),
+  personId: integer("person_id")
+    .notNull()
+    .references(() => persons.id),
+  amountCents: integer("amount_cents").notNull(),
+});
+
 export const billDiscounts = sqliteTable("bill_discount", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   billId: integer("bill_id")
@@ -128,4 +144,5 @@ export type Bill = typeof bills.$inferSelect;
 export type BillItem = typeof billItems.$inferSelect;
 export type BillDiscount = typeof billDiscounts.$inferSelect;
 export type Repayment = typeof repayments.$inferSelect;
+export type BillPayment = typeof billPayments.$inferSelect;
 export type ItemAlias = typeof itemAliases.$inferSelect;

@@ -1,7 +1,13 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
-import type { Bill, BillItem, Month, Person } from "@/db/schema";
-import { settle, type SettleBill, type Settlement } from "./settlement";
+import type { Bill, BillItem, BillPayment, Month, Person } from "@/db/schema";
+import {
+  effectiveCosts,
+  payerCredits,
+  settle,
+  type SettleBill,
+  type Settlement,
+} from "./settlement";
 
 export function listPersons(): Person[] {
   return db
@@ -49,7 +55,24 @@ export function listMonths(): Month[] {
     .all();
 }
 
-export type BillWithItems = Bill & { items: BillItem[] };
+export type BillWithItems = Bill & {
+  items: BillItem[];
+  /** Split payments; empty for single-payer bills (use payerPersonId). */
+  payments: BillPayment[];
+};
+
+/** Effective payer list: split rows when present, else the single payer. */
+export function billPayers(
+  bill: BillWithItems,
+): { personId: number; amountCents: number }[] {
+  if (bill.payments.length > 0)
+    return bill.payments.map((p) => ({
+      personId: p.personId,
+      amountCents: p.amountCents,
+    }));
+  if (bill.payerPersonId == null) return [];
+  return [{ personId: bill.payerPersonId, amountCents: bill.netCents }];
+}
 
 export function listBillsForMonth(monthId: number): BillWithItems[] {
   const bills = db
@@ -59,20 +82,22 @@ export function listBillsForMonth(monthId: number): BillWithItems[] {
     .orderBy(desc(schema.bills.billDate), desc(schema.bills.id))
     .all();
   if (bills.length === 0) return [];
+  const billIds = bills.map((b) => b.id);
   const items = db
     .select()
     .from(schema.billItems)
-    .where(
-      inArray(
-        schema.billItems.billId,
-        bills.map((b) => b.id),
-      ),
-    )
+    .where(inArray(schema.billItems.billId, billIds))
     .orderBy(asc(schema.billItems.lineNo))
+    .all();
+  const payments = db
+    .select()
+    .from(schema.billPayments)
+    .where(inArray(schema.billPayments.billId, billIds))
     .all();
   return bills.map((bill) => ({
     ...bill,
     items: items.filter((item) => item.billId === bill.id),
+    payments: payments.filter((p) => p.billId === bill.id),
   }));
 }
 
@@ -89,14 +114,19 @@ export function getBillWithItems(billId: number): BillWithItems | undefined {
     .where(eq(schema.billItems.billId, billId))
     .orderBy(asc(schema.billItems.lineNo))
     .all();
-  return { ...bill, items };
+  const payments = db
+    .select()
+    .from(schema.billPayments)
+    .where(eq(schema.billPayments.billId, billId))
+    .all();
+  return { ...bill, items, payments };
 }
 
 function toSettleBills(bills: BillWithItems[]): SettleBill[] {
   return bills
-    .filter((b) => b.status === "confirmed" && b.payerPersonId != null)
+    .filter((b) => b.status === "confirmed")
     .map((b) => ({
-      payerPersonId: b.payerPersonId as number,
+      payers: billPayers(b),
       discountCents: b.discountCents,
       items: b.items.map((item) => ({
         lineTotalCents: item.lineTotalCents,
@@ -104,7 +134,8 @@ function toSettleBills(bills: BillWithItems[]): SettleBill[] {
         status: item.status,
         ownerPersonId: item.ownerPersonId,
       })),
-    }));
+    }))
+    .filter((b) => b.payers.length > 0);
 }
 
 export function listRepaymentsForMonth(monthId: number) {
@@ -178,6 +209,93 @@ export function settleMonth(
       amountCents: r.amountCents,
     })),
   });
+}
+
+export function billLabel(bill: BillWithItems): string {
+  return bill.source === "manual" && bill.items.length === 1
+    ? bill.items[0].displayName
+    : (bill.storeName ?? "Keells");
+}
+
+export type BreakdownBillPaid = {
+  billId: number;
+  label: string;
+  date: string;
+  /** what this person was credited for the bill (their split share) */
+  creditCents: number;
+  splitOfCents: number | null; // bill net when split between people
+};
+
+export type BreakdownPersonalItem = {
+  billId: number;
+  name: string;
+  date: string;
+  costCents: number;
+  paidBy: string; // "Aditha" or "Aditha + Ravishka"
+};
+
+export type PersonBreakdown = {
+  personId: number;
+  billsPaid: BreakdownBillPaid[];
+  personalItems: BreakdownPersonalItem[];
+};
+
+/**
+ * Itemized "why is my number what it is" data per person: every bill they
+ * were credited for and every personal item charged to them, using the same
+ * effective-cost math as the settlement.
+ */
+export function monthBreakdowns(
+  monthId: number,
+  persons: Person[],
+): Map<number, PersonBreakdown> {
+  const result = new Map<number, PersonBreakdown>(
+    persons.map((p) => [p.id, { personId: p.id, billsPaid: [], personalItems: [] }]),
+  );
+  const firstName = (id: number) =>
+    persons.find((p) => p.id === id)?.name.split(" ")[0] ?? `#${id}`;
+
+  for (const bill of listBillsForMonth(monthId)) {
+    if (bill.status !== "confirmed") continue;
+    const payers = billPayers(bill);
+    if (payers.length === 0) continue;
+    const settleBill: SettleBill = {
+      payers,
+      discountCents: bill.discountCents,
+      items: bill.items.map((item) => ({
+        lineTotalCents: item.lineTotalCents,
+        discountCents: item.discountCents,
+        status: item.status,
+        ownerPersonId: item.ownerPersonId,
+      })),
+    };
+    const costs = effectiveCosts(settleBill);
+    const label = billLabel(bill);
+    const paidBy = payers.map((p) => firstName(p.personId)).join(" + ");
+
+    for (const credit of payerCredits(settleBill)) {
+      if (credit.amountCents === 0) continue;
+      result.get(credit.personId)?.billsPaid.push({
+        billId: bill.id,
+        label,
+        date: bill.billDate,
+        creditCents: credit.amountCents,
+        splitOfCents: payers.length > 1 ? bill.netCents : null,
+      });
+    }
+
+    bill.items.forEach((item, i) => {
+      if (item.status !== "personal" || item.ownerPersonId == null) return;
+      result.get(item.ownerPersonId)?.personalItems.push({
+        billId: bill.id,
+        name: item.displayName,
+        date: bill.billDate,
+        costCents: costs[i],
+        paidBy,
+      });
+    });
+  }
+  return result;
 }
 
 export function ymSlug(month: Month): string {

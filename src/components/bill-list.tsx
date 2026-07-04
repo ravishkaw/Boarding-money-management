@@ -36,7 +36,10 @@ export function BillList({
               <div className="min-w-0">
                 <div className="truncate font-medium">{label}</div>
                 <div className="text-xs text-zinc-500">
-                  {bill.billDate} · {nameOf(bill.payerPersonId)} paid
+                  {bill.billDate} ·{" "}
+                  {bill.payments.length > 0
+                    ? `${bill.payments.map((p) => nameOf(p.personId)).join(" + ")} paid`
+                    : `${nameOf(bill.payerPersonId)} paid`}
                   {bill.items.length > 1 ? ` · ${bill.items.length} items` : ""}
                   {bill.status === "draft" ? " · DRAFT" : ""}
                 </div>

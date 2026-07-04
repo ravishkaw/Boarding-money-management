@@ -7,10 +7,12 @@ import {
   listBillsForMonth,
   listPersons,
   listRepaymentsForMonth,
+  monthBreakdowns,
   monthLabel,
   parseYmSlug,
   settleMonth,
 } from "@/lib/data";
+import { getSession } from "@/lib/auth";
 import { formatCentsPlain } from "@/lib/money";
 import { setMonthStatus } from "../actions";
 
@@ -22,6 +24,7 @@ export default async function MonthPage({
   params: Promise<{ ym: string }>;
 }) {
   const { ym } = await params;
+  const session = await getSession();
   const parsed = parseYmSlug(ym);
   if (!parsed) notFound();
   const month = getMonth(parsed.year, parsed.month);
@@ -81,6 +84,8 @@ export default async function MonthPage({
         monthId={month.id}
         editable={month.status === "open"}
         repayments={listRepaymentsForMonth(month.id)}
+        breakdowns={monthBreakdowns(month.id, persons)}
+        sessionPersonId={session?.personId}
       />
 
       <section className="flex flex-col gap-2">

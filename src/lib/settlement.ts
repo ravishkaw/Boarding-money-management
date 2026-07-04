@@ -17,8 +17,11 @@ export type SettleItem = {
   ownerPersonId?: number | null;
 };
 
+export type SettlePayer = { personId: number; amountCents: number };
+
 export type SettleBill = {
-  payerPersonId: number;
+  /** Who handed over money, and how much each. Single payer = one entry. */
+  payers: SettlePayer[];
   /** TOTAL bill discount (item-wise + receipt-level). */
   discountCents: number;
   items: SettleItem[];
@@ -107,6 +110,38 @@ export function effectiveCosts(bill: SettleBill): number[] {
   return costs;
 }
 
+/** Sum of effective costs of a bill's non-excluded items. */
+export function effectiveTotalOf(bill: SettleBill): number {
+  const costs = effectiveCosts(bill);
+  return bill.items.reduce(
+    (sum, item, i) => (item.status === "excluded" ? sum : sum + costs[i]),
+    0,
+  );
+}
+
+/**
+ * What each payer gets credited: proportional to what they handed over,
+ * with the last payer absorbing the rounding remainder so credits sum
+ * exactly to the effective total (which differs from the net only when
+ * items are excluded).
+ */
+export function payerCredits(
+  bill: SettleBill,
+  effectiveTotal = effectiveTotalOf(bill),
+): SettlePayer[] {
+  const contributed = bill.payers.reduce((sum, p) => sum + p.amountCents, 0);
+  if (contributed <= 0 || bill.payers.length === 0) return [];
+  let creditLeft = effectiveTotal;
+  return bill.payers.map((payer, i) => {
+    const credit =
+      i === bill.payers.length - 1
+        ? creditLeft
+        : Math.round((effectiveTotal * payer.amountCents) / contributed);
+    creditLeft -= credit;
+    return { personId: payer.personId, amountCents: credit };
+  });
+}
+
 export function settle(input: SettleInput): Settlement {
   const { personIds, bills } = input;
   const openings = input.openings ?? new Map<number, number>();
@@ -119,10 +154,11 @@ export function settle(input: SettleInput): Settlement {
 
   for (const bill of bills) {
     const costs = effectiveCosts(bill);
+    let effectiveTotal = 0;
     bill.items.forEach((item, i) => {
       if (item.status === "excluded") return;
       const cost = costs[i];
-      paid.set(bill.payerPersonId, (paid.get(bill.payerPersonId) ?? 0) + cost);
+      effectiveTotal += cost;
       if (item.status === "shared") {
         sharedPool += cost;
       } else {
@@ -132,6 +168,13 @@ export function settle(input: SettleInput): Settlement {
         personal.set(owner, (personal.get(owner) ?? 0) + cost);
       }
     });
+
+    for (const credit of payerCredits(bill, effectiveTotal)) {
+      paid.set(
+        credit.personId,
+        (paid.get(credit.personId) ?? 0) + credit.amountCents,
+      );
+    }
   }
 
   const repaid = new Map<number, number>(personIds.map((id) => [id, 0]));

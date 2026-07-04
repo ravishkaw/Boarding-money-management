@@ -9,7 +9,7 @@ const [A, P, R] = [1, 2, 3]; // Aditha, Pahasara, Ravishka
 
 function sharedBill(payer: number, cents: number): SettleBill {
   return {
-    payerPersonId: payer,
+    payers: [{ personId: payer, amountCents: cents }],
     discountCents: 0,
     items: [{ lineTotalCents: cents, status: "shared" }],
   };
@@ -18,7 +18,7 @@ function sharedBill(payer: number, cents: number): SettleBill {
 describe("effectiveCosts", () => {
   it("passes line totals through when there is no discount", () => {
     const bill: SettleBill = {
-      payerPersonId: A,
+      payers: [{ personId: A, amountCents: 300 }],
       discountCents: 0,
       items: [
         { lineTotalCents: 100, status: "shared" },
@@ -30,7 +30,7 @@ describe("effectiveCosts", () => {
 
   it("prorates the discount and sums exactly to gross - discount", () => {
     const bill: SettleBill = {
-      payerPersonId: A,
+      payers: [{ personId: A, amountCents: 900 }],
       discountCents: 100,
       items: [
         { lineTotalCents: 333, status: "shared" },
@@ -45,7 +45,7 @@ describe("effectiveCosts", () => {
   it("takes item-wise discounts off their own line, prorates only the rest", () => {
     // Receipt: 300 (25% off = 75 item-wise) + 100, plus a 10 receipt-level discount.
     const bill: SettleBill = {
-      payerPersonId: A,
+      payers: [{ personId: A, amountCents: 315 }],
       discountCents: 85, // 75 item-wise + 10 receipt-level
       items: [
         { lineTotalCents: 300, discountCents: 75, status: "shared" },
@@ -60,7 +60,7 @@ describe("effectiveCosts", () => {
 
   it("keeps a discounted item's own discount when another item is excluded", () => {
     const bill: SettleBill = {
-      payerPersonId: A,
+      payers: [{ personId: A, amountCents: 225 }],
       discountCents: 75,
       items: [
         { lineTotalCents: 300, discountCents: 75, status: "shared" },
@@ -72,7 +72,7 @@ describe("effectiveCosts", () => {
 
   it("gives excluded items zero cost and no discount share", () => {
     const bill: SettleBill = {
-      payerPersonId: A,
+      payers: [{ personId: A, amountCents: 900 }],
       discountCents: 100,
       items: [
         { lineTotalCents: 500, status: "excluded" },
@@ -116,7 +116,7 @@ describe("settle", () => {
       personIds: [A, P, R],
       bills: [
         {
-          payerPersonId: A,
+          payers: [{ personId: A, amountCents: 245000 }],
           discountCents: 0,
           items: [
             { lineTotalCents: 200000, status: "shared" },
@@ -141,7 +141,7 @@ describe("settle", () => {
       personIds: [A, P, R],
       bills: [
         {
-          payerPersonId: A,
+          payers: [{ personId: A, amountCents: 45000 }],
           discountCents: 0,
           items: [
             { lineTotalCents: 45000, status: "personal", ownerPersonId: P },
@@ -159,13 +159,65 @@ describe("settle", () => {
     expect(s.transfers).toEqual([]);
   });
 
+  it("splits a bill paid by two people, crediting each what they handed over", () => {
+    // 3,000.00 shared bill: Aditha put in 2,000, Ravishka 1,000.
+    const s = settle({
+      personIds: [A, P, R],
+      bills: [
+        {
+          payers: [
+            { personId: A, amountCents: 200000 },
+            { personId: R, amountCents: 100000 },
+          ],
+          discountCents: 0,
+          items: [{ lineTotalCents: 300000, status: "shared" }],
+        },
+      ],
+    });
+    const [a, p, r] = s.persons;
+    expect(a.paidCents).toBe(200000);
+    expect(r.paidCents).toBe(100000);
+    expect(a.deltaCents).toBe(100000);
+    expect(p.deltaCents).toBe(-100000);
+    expect(r.deltaCents).toBe(0);
+    expect(s.transfers).toEqual([
+      { fromPersonId: P, toPersonId: A, amountCents: 100000 },
+    ]);
+  });
+
+  it("scales split-payer credit down when items are excluded", () => {
+    // 1,000 bill paid 600/400, but a 200 item was excluded (e.g. returned).
+    const s = settle({
+      personIds: [A, P],
+      bills: [
+        {
+          payers: [
+            { personId: A, amountCents: 600 },
+            { personId: P, amountCents: 400 },
+          ],
+          discountCents: 0,
+          items: [
+            { lineTotalCents: 800, status: "shared" },
+            { lineTotalCents: 200, status: "excluded" },
+          ],
+        },
+      ],
+    });
+    const [a, p] = s.persons;
+    // credits: round(800*600/1000)=480, remainder -> 320
+    expect(a.paidCents).toBe(480);
+    expect(p.paidCents).toBe(320);
+    expect(a.paidCents + p.paidCents).toBe(800);
+    expect(s.persons.reduce((sum, x) => sum + x.deltaCents, 0)).toBe(0);
+  });
+
   it("throws when a personal item has no owner", () => {
     expect(() =>
       settle({
         personIds: [A, P],
         bills: [
           {
-            payerPersonId: A,
+            payers: [{ personId: A, amountCents: 100 }],
             discountCents: 0,
             items: [{ lineTotalCents: 100, status: "personal" }],
           },

@@ -61,16 +61,25 @@ export default async function BillPage({
         billId={bill.id}
         people={people}
         payerId={bill.payerPersonId}
+        split={bill.payments.map((p) => ({
+          personId: p.personId,
+          amountCents: p.amountCents,
+        }))}
+        netCents={bill.netCents}
         disabled={locked}
       />
 
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800">
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {bill.items.map((item) => (
-            <li key={item.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="flex min-w-0 flex-1 flex-col">
+            <li key={item.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
                 <span
-                  className={item.status === "excluded" ? "text-zinc-400 line-through" : ""}
+                  className={`flex min-w-0 flex-1 ${
+                    item.status === "excluded"
+                      ? "text-zinc-400 line-through"
+                      : ""
+                  }`}
                 >
                   <ItemName
                     itemId={item.id}
@@ -79,35 +88,39 @@ export default async function BillPage({
                     disabled={locked}
                   />
                 </span>
-                <div className="text-xs text-zinc-500">
-                  {item.quantity} × {formatCentsPlain(item.unitPriceCents)}
+                <div className="shrink-0 text-right font-semibold">
+                  {item.discountCents > 0 ? (
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs font-normal text-zinc-400 line-through">
+                        {formatCentsPlain(item.lineTotalCents)}
+                      </span>
+                      {formatCentsPlain(
+                        item.lineTotalCents - item.discountCents,
+                      )}
+                    </div>
+                  ) : (
+                    formatCentsPlain(item.lineTotalCents)
+                  )}
                 </div>
-                {item.discountCents > 0 && (
-                  <div className="text-xs text-emerald-700 dark:text-emerald-400">
-                    {item.discountNote ?? "Discount"} −
-                    {formatCentsPlain(item.discountCents)}
-                  </div>
-                )}
               </div>
-              <div className="shrink-0 text-right font-semibold">
-                {item.discountCents > 0 ? (
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs text-zinc-400 line-through">
-                      {formatCentsPlain(item.lineTotalCents)}
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <div className="min-w-0 text-xs text-zinc-500">
+                  {item.quantity} × {formatCentsPlain(item.unitPriceCents)}
+                  {item.discountCents > 0 && (
+                    <span className="ml-2 text-emerald-700 dark:text-emerald-400">
+                      {item.discountNote ?? "Discount"} −
+                      {formatCentsPlain(item.discountCents)}
                     </span>
-                    {formatCentsPlain(item.lineTotalCents - item.discountCents)}
-                  </div>
-                ) : (
-                  formatCentsPlain(item.lineTotalCents)
-                )}
+                  )}
+                </div>
+                <ItemStatusControl
+                  itemId={item.id}
+                  status={item.status}
+                  ownerPersonId={item.ownerPersonId}
+                  people={people}
+                  disabled={locked}
+                />
               </div>
-              <ItemStatusControl
-                itemId={item.id}
-                status={item.status}
-                ownerPersonId={item.ownerPersonId}
-                people={people}
-                disabled={locked}
-              />
             </li>
           ))}
         </ul>

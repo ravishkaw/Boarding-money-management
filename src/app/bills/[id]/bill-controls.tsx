@@ -7,50 +7,143 @@ import {
   deleteBill,
   renameItem,
   setBillPayer,
+  setBillSplit,
   setItemStatus,
 } from "../actions";
 
 type PersonOption = { id: number; name: string };
+type SplitEntry = { personId: number; amountCents: number };
 
 export function PayerPicker({
   billId,
   people,
   payerId,
+  split,
+  netCents,
   disabled,
 }: {
   billId: number;
   people: PersonOption[];
   payerId: number | null;
+  /** existing split rows; empty = single payer */
+  split: SplitEntry[];
+  netCents: number;
   disabled: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [splitMode, setSplitMode] = useState(split.length > 0);
+  const [amounts, setAmounts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      people.map((p) => {
+        const existing = split.find((s) => s.personId === p.id);
+        return [p.id, existing ? (existing.amountCents / 100).toFixed(2) : ""];
+      }),
+    ),
+  );
+
+  const entered = people
+    .map((p) => ({
+      personId: p.id,
+      amountCents: Math.round(Number(amounts[p.id]?.replace(/,/g, "") || 0) * 100),
+    }))
+    .filter((e) => e.amountCents > 0);
+  const enteredSum = entered.reduce((sum, e) => sum + e.amountCents, 0);
+  const remaining = netCents - enteredSum;
 
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm font-medium">Who paid?</span>
-      <div className="grid grid-cols-3 gap-2">
-        {people.map((p) => (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Who paid?</span>
+        {!disabled && (
           <button
-            key={p.id}
             type="button"
-            disabled={disabled || pending}
+            onClick={() => setSplitMode(!splitMode)}
+            className="text-xs text-emerald-700 underline dark:text-emerald-400"
+          >
+            {splitMode ? "single payer" : "split between people…"}
+          </button>
+        )}
+      </div>
+
+      {!splitMode ? (
+        <div className="grid grid-cols-3 gap-2">
+          {people.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={disabled || pending}
+              onClick={() =>
+                startTransition(async () => {
+                  const res = await setBillPayer(billId, p.id);
+                  setError(res.error ?? null);
+                })
+              }
+              className={`rounded-xl border px-2 py-2 text-sm disabled:opacity-50 ${
+                payerId === p.id && split.length === 0
+                  ? "border-emerald-600 bg-emerald-50 font-semibold dark:bg-emerald-950"
+                  : "border-zinc-300 dark:border-zinc-700"
+              }`}
+            >
+              {p.name.split(" ")[0]}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+          {people.map((p) => (
+            <label
+              key={p.id}
+              className="flex items-center justify-between gap-3 text-sm"
+            >
+              <span>{p.name.split(" ")[0]} put in (Rs.)</span>
+              <input
+                value={amounts[p.id] ?? ""}
+                onChange={(e) =>
+                  setAmounts({ ...amounts, [p.id]: e.target.value })
+                }
+                inputMode="decimal"
+                placeholder="0.00"
+                disabled={disabled}
+                className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-right dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </label>
+          ))}
+          <p
+            className={`text-xs ${remaining === 0 ? "text-emerald-600" : "text-amber-600"}`}
+          >
+            {remaining === 0
+              ? "Adds up to the bill ✓"
+              : remaining > 0
+                ? `Rs. ${(remaining / 100).toFixed(2)} still unassigned`
+                : `Rs. ${(-remaining / 100).toFixed(2)} over the bill total`}
+          </p>
+          <button
+            type="button"
+            disabled={disabled || pending || remaining !== 0}
             onClick={() =>
               startTransition(async () => {
-                const res = await setBillPayer(billId, p.id);
+                const res = await setBillSplit(billId, entered);
                 setError(res.error ?? null);
               })
             }
-            className={`rounded-xl border px-2 py-2 text-sm disabled:opacity-50 ${
-              payerId === p.id
-                ? "border-emerald-600 bg-emerald-50 font-semibold dark:bg-emerald-950"
-                : "border-zinc-300 dark:border-zinc-700"
-            }`}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {p.name.split(" ")[0]}
+            {pending ? "Saving…" : "Save split"}
           </button>
-        ))}
-      </div>
+        </div>
+      )}
+      {split.length > 0 && !splitMode && (
+        <p className="text-xs text-zinc-500">
+          Currently split:{" "}
+          {split
+            .map(
+              (s) =>
+                `${people.find((p) => p.id === s.personId)?.name.split(" ")[0]} ${(s.amountCents / 100).toFixed(2)}`,
+            )
+            .join(" · ")}
+        </p>
+      )}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );

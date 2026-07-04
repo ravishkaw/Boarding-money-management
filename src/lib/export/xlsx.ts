@@ -94,7 +94,10 @@ export async function buildMonthWorkbook(
       itemsSheet.addRow({
         date: bill.billDate,
         bill: billLabel,
-        payer: nameOf(bill.payerPersonId),
+        payer:
+          bill.payments.length > 0
+            ? bill.payments.map((p) => nameOf(p.personId)).join(" + ")
+            : nameOf(bill.payerPersonId),
         item: item.displayName,
         unit: rs(item.unitPriceCents),
         qty: item.quantity,

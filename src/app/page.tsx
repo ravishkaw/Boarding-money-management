@@ -1,19 +1,22 @@
 import Link from "next/link";
 import { BillList } from "@/components/bill-list";
 import { SettlementView } from "@/components/settlement-view";
+import { getSession } from "@/lib/auth";
 import {
   currentYm,
   getOrCreateMonth,
   listBillsForMonth,
   listPersons,
   listRepaymentsForMonth,
+  monthBreakdowns,
   monthLabel,
   settleMonth,
 } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getSession();
   const { year, month } = currentYm();
   const monthRow = getOrCreateMonth(year, month);
   const persons = listPersons();
@@ -50,6 +53,8 @@ export default function DashboardPage() {
         monthId={monthRow.id}
         editable={monthRow.status === "open"}
         repayments={listRepaymentsForMonth(monthRow.id)}
+        breakdowns={monthBreakdowns(monthRow.id, persons)}
+        sessionPersonId={session?.personId}
       />
 
       <section className="flex flex-col gap-2">
