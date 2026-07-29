@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BillList } from "@/components/bill-list";
+import { MonthSummary } from "@/components/month-summary";
 import { SettlementView } from "@/components/settlement-view";
 import {
   getMonth,
@@ -77,6 +78,12 @@ export default async function MonthPage({
           </form>
         </div>
       </div>
+
+      <MonthSummary
+        settlement={settlement}
+        billCount={bills.filter((b) => b.status === "confirmed").length}
+        personCount={persons.length}
+      />
 
       <SettlementView
         settlement={settlement}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BillList } from "@/components/bill-list";
+import { MonthSummary } from "@/components/month-summary";
 import { SettlementView } from "@/components/settlement-view";
 import { getSession } from "@/lib/auth";
 import {
@@ -46,6 +47,12 @@ export default async function DashboardPage() {
           Quick add
         </Link>
       </div>
+
+      <MonthSummary
+        settlement={settlement}
+        billCount={bills.filter((b) => b.status === "confirmed").length}
+        personCount={persons.length}
+      />
 
       <SettlementView
         settlement={settlement}
