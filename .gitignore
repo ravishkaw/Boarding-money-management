@@ -42,3 +42,7 @@ next-env.d.ts
 
 local.db
 local.db-*
+
+boarding.db
+boarding.db-*
+*.db.bak

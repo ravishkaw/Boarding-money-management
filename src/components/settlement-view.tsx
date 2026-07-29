@@ -47,7 +47,7 @@ export function SettlementView({
           return (
             <div
               key={p.personId}
-              className={`rounded-2xl border p-4 ${
+              className={`min-w-0 rounded-2xl border p-4 ${
                 isYou
                   ? "border-emerald-400 dark:border-emerald-700"
                   : "border-zinc-200 dark:border-zinc-800"
@@ -127,7 +127,7 @@ export function SettlementView({
                         <li key={i} className="flex justify-between gap-2">
                           <Link
                             href={`/bills/${b.billId}`}
-                            className="truncate underline decoration-zinc-300 underline-offset-2"
+                            className="min-w-0 truncate underline decoration-zinc-300 underline-offset-2"
                           >
                             {b.date.slice(5)} {b.label}
                             {b.splitOfCents !== null &&
@@ -152,7 +152,7 @@ export function SettlementView({
                         <li key={i} className="flex justify-between gap-2">
                           <Link
                             href={`/bills/${item.billId}`}
-                            className="truncate underline decoration-zinc-300 underline-offset-2"
+                            className="min-w-0 truncate underline decoration-zinc-300 underline-offset-2"
                           >
                             {item.name} · on {item.paidBy}&apos;s bill
                           </Link>
