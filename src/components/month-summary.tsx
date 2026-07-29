@@ -10,10 +10,12 @@ export function MonthSummary({
   settlement,
   billCount,
   personCount,
+  sessionPersonId,
 }: {
   settlement: Settlement;
   billCount: number;
   personCount: number;
+  sessionPersonId?: number;
 }) {
   const personalTotal = settlement.persons.reduce(
     (sum, p) => sum + p.personalCents,
@@ -23,6 +25,10 @@ export function MonthSummary({
   const total = sharedPool + personalTotal;
   const perPerson = personCount > 0 ? Math.round(sharedPool / personCount) : 0;
 
+  // Prefer the signed-in person's own personal spend; fall back to the
+  // household total when there's no session.
+  const mine = settlement.persons.find((p) => p.personId === sessionPersonId);
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <Stat label="Total this month" value={formatCents(total)} accent />
@@ -31,7 +37,15 @@ export function MonthSummary({
         value={formatCents(sharedPool)}
         sub={`${formatCents(perPerson)} each`}
       />
-      <Stat label="Personal" value={formatCents(personalTotal)} />
+      {mine ? (
+        <Stat
+          label="Your personal"
+          value={formatCents(mine.personalCents)}
+          sub={`${formatCents(personalTotal)} all`}
+        />
+      ) : (
+        <Stat label="Personal" value={formatCents(personalTotal)} />
+      )}
       <Stat
         label="Bills"
         value={String(billCount)}

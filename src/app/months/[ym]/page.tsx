@@ -83,6 +83,7 @@ export default async function MonthPage({
         settlement={settlement}
         billCount={bills.filter((b) => b.status === "confirmed").length}
         personCount={persons.length}
+        sessionPersonId={session?.personId}
       />
 
       <SettlementView

@@ -52,6 +52,7 @@ export default async function DashboardPage() {
         settlement={settlement}
         billCount={bills.filter((b) => b.status === "confirmed").length}
         personCount={persons.length}
+        sessionPersonId={session?.personId}
       />
 
       <SettlementView
