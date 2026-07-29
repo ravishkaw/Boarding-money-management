@@ -135,6 +135,84 @@ describe("settle", () => {
     expect(s.persons.reduce((sum, x) => sum + x.deltaCents, 0)).toBe(0);
   });
 
+  it("keeps a personal-item-on-someone-else's-bill strictly between the two people", () => {
+    // Ravishka's Rs. 1,000 personal item on Aditha's bill; nothing shared.
+    // Must be a two-person transfer (R -> A). Pahasara is completely untouched.
+    const s = settle({
+      personIds: [A, P, R],
+      bills: [
+        {
+          payers: [{ personId: A, amountCents: 100000 }],
+          discountCents: 0,
+          items: [
+            { lineTotalCents: 100000, status: "personal", ownerPersonId: R },
+          ],
+        },
+      ],
+    });
+    const [a, p, r] = s.persons;
+
+    // Nothing is shared, so no one pays a "fair share".
+    expect(s.sharedPoolCents).toBe(0);
+    expect(a.fairShareCents).toBe(0);
+    expect(p.fairShareCents).toBe(0);
+    expect(r.fairShareCents).toBe(0);
+
+    // Aditha is owed exactly 1,000; Ravishka owes exactly 1,000.
+    expect(a.deltaCents).toBe(100000);
+    expect(r.deltaCents).toBe(-100000);
+
+    // Pahasara: paid nothing, owns nothing, owes nothing — untouched.
+    expect(p.paidCents).toBe(0);
+    expect(p.personalCents).toBe(0);
+    expect(p.deltaCents).toBe(0);
+    expect(p.closingCents).toBe(0);
+
+    // Settle-up is a single R -> A transfer; Pahasara appears in no transfer.
+    expect(s.transfers).toEqual([
+      { fromPersonId: R, toPersonId: A, amountCents: 100000 },
+    ]);
+    expect(
+      s.transfers.some(
+        (t) => t.fromPersonId === P || t.toPersonId === P,
+      ),
+    ).toBe(false);
+  });
+
+  it("only the shared portion touches the third person; the personal part stays two-way", () => {
+    // Aditha's bill: 300 shared + Ravishka's 90 personal item (10% off = 9 discount).
+    // Pahasara should be affected ONLY by his 100 share of the 300 shared pool,
+    // never by Ravishka's personal item.
+    const s = settle({
+      personIds: [A, P, R],
+      bills: [
+        {
+          payers: [{ personId: A, amountCents: 38100 }],
+          discountCents: 900,
+          items: [
+            { lineTotalCents: 30000, status: "shared" },
+            {
+              lineTotalCents: 9000,
+              discountCents: 900,
+              status: "personal",
+              ownerPersonId: R,
+            },
+          ],
+        },
+      ],
+    });
+    const [a, p, r] = s.persons;
+
+    expect(s.sharedPoolCents).toBe(30000); // personal item excluded from pool
+    // Pahasara owes exactly his third of the shared 300 — and nothing else.
+    expect(p.fairShareCents).toBe(10000);
+    expect(p.personalCents).toBe(0);
+    expect(p.deltaCents).toBe(-10000);
+    // Ravishka's personal item is the discounted 81, charged only to him.
+    expect(r.personalCents).toBe(8100);
+    expect(s.persons.reduce((sum, x) => sum + x.deltaCents, 0)).toBe(0);
+  });
+
   it("applies repayments: 'Pahasara paid Aditha back' zeroes the debt", () => {
     // Aditha pays Pahasara's 450.00 personal item, then Pahasara repays in cash.
     const s = settle({
