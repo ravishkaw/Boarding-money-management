@@ -213,6 +213,42 @@ describe("settle", () => {
     expect(s.persons.reduce((sum, x) => sum + x.deltaCents, 0)).toBe(0);
   });
 
+  it("bases fair share on shared-item value only, never on amounts paid", () => {
+    // Same shared value (300) in both cases; the second bill just piles on a
+    // big personal item and an excluded item. Fair share must NOT change.
+    const bare = settle({
+      personIds: [A, P, R],
+      bills: [sharedBill(A, 30000)],
+    });
+    const withExtras = settle({
+      personIds: [A, P, R],
+      bills: [
+        {
+          payers: [{ personId: A, amountCents: 130000 }], // A paid a LOT more
+          discountCents: 0,
+          items: [
+            { lineTotalCents: 30000, status: "shared" },
+            { lineTotalCents: 90000, status: "personal", ownerPersonId: R },
+            { lineTotalCents: 10000, status: "excluded" },
+          ],
+        },
+      ],
+    });
+
+    expect(bare.sharedPoolCents).toBe(30000);
+    expect(withExtras.sharedPoolCents).toBe(30000); // personal/excluded ignored
+    // Every person's fair share is identical across both scenarios.
+    expect(withExtras.persons.map((p) => p.fairShareCents)).toEqual(
+      bare.persons.map((p) => p.fairShareCents),
+    );
+    expect(withExtras.persons.map((p) => p.fairShareCents)).toEqual([
+      10000, 10000, 10000,
+    ]);
+    // Aditha paid 1,300 but her share is still only 100 — the extra is her
+    // credit for covering Ravishka's personal item, not a bigger share.
+    expect(withExtras.persons[0].fairShareCents).toBe(10000);
+  });
+
   it("applies repayments: 'Pahasara paid Aditha back' zeroes the debt", () => {
     // Aditha pays Pahasara's 450.00 personal item, then Pahasara repays in cash.
     const s = settle({
