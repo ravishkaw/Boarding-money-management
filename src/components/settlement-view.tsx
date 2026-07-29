@@ -142,28 +142,92 @@ export function SettlementView({
                   </div>
                 )}
 
-                {breakdown && breakdown.personalItems.length > 0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      {isYou ? "Your" : "Their"} personal items
-                    </div>
-                    <ul className="mt-1 space-y-0.5 text-xs">
-                      {breakdown.personalItems.map((item, i) => (
-                        <li key={i} className="flex justify-between gap-2">
-                          <Link
-                            href={`/bills/${item.billId}`}
-                            className="min-w-0 truncate underline decoration-zinc-300 underline-offset-2"
-                          >
-                            {item.name} · on {item.paidBy}&apos;s bill
-                          </Link>
-                          <span className="shrink-0">
-                            {formatCents(item.costCents)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                {breakdown &&
+                  breakdown.personalItems.length > 0 &&
+                  (() => {
+                    const ownName = nameOf(p.personId);
+                    // Group personal items by whose bill they were on.
+                    const groups = new Map<
+                      string,
+                      typeof breakdown.personalItems
+                    >();
+                    for (const item of breakdown.personalItems) {
+                      const arr = groups.get(item.paidBy) ?? [];
+                      arr.push(item);
+                      groups.set(item.paidBy, arr);
+                    }
+                    // own (fully self-paid) first, co-paid next, others last
+                    const rank = (paidBy: string) => {
+                      const payers = paidBy.split(" + ");
+                      if (payers.length === 1 && payers[0] === ownName) return 0;
+                      if (payers.includes(ownName)) return 1;
+                      return 2;
+                    };
+                    const entries = [...groups.entries()].sort(
+                      (a, b) => rank(a[0]) - rank(b[0]),
+                    );
+                    return (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                          {isYou ? "Your" : "Their"} personal items
+                        </div>
+                        <div className="mt-1 space-y-2">
+                          {entries.map(([paidBy, items]) => {
+                            const subtotal = items.reduce(
+                              (sum, x) => sum + x.costCents,
+                              0,
+                            );
+                            const payers = paidBy.split(" + ");
+                            const ownFully =
+                              payers.length === 1 && payers[0] === ownName;
+                            const ownPartly =
+                              payers.length > 1 && payers.includes(ownName);
+                            const note = ownFully
+                              ? isYou
+                                ? "you paid"
+                                : "self-paid"
+                              : ownPartly
+                                ? "partly yours"
+                                : isYou
+                                  ? `you owe ${paidBy}`
+                                  : `owes ${paidBy}`;
+                            return (
+                              <div key={paidBy}>
+                                <div className="flex items-baseline justify-between gap-2 text-xs font-medium text-zinc-500">
+                                  <span className="min-w-0 truncate">
+                                    {ownFully
+                                      ? `On ${isYou ? "your" : "their"} own bill`
+                                      : `On ${paidBy}'s bill`}
+                                  </span>
+                                  <span className="shrink-0">
+                                    {formatCents(subtotal)} · {note}
+                                  </span>
+                                </div>
+                                <ul className="mt-0.5 space-y-0.5 text-xs">
+                                  {items.map((item, i) => (
+                                    <li
+                                      key={i}
+                                      className="flex justify-between gap-2 pl-3"
+                                    >
+                                      <Link
+                                        href={`/bills/${item.billId}`}
+                                        className="min-w-0 truncate underline decoration-zinc-300 underline-offset-2"
+                                      >
+                                        {item.name}
+                                      </Link>
+                                      <span className="shrink-0">
+                                        {formatCents(item.costCents)}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
               </details>
             </div>
           );
