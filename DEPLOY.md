@@ -92,6 +92,17 @@ npm run db:push        # applies any schema changes
 pm2 restart boarding
 ```
 
+After an update that changed the Keells parser, re-check the stored
+receipts against the database (report only, then apply if it lists fixes):
+
+```bash
+npm run db:reconcile
+npm run db:reconcile -- --apply --fix-openings
+```
+
+The **Ledger check** at the top of Settings runs the same invariants on
+every visit; if it ever lists a problem, that's the first place to look.
+
 ## Nightly backup (the whole DB is one file)
 
 ```bash

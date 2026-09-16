@@ -3,9 +3,20 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
+import { logActivity } from "@/lib/activity";
 import { getSession } from "@/lib/auth";
+import { formatCentsPlain } from "@/lib/money";
 
 export type ActionState = { error?: string };
+
+function personName(id: number): string {
+  const person = db
+    .select({ name: schema.persons.name })
+    .from(schema.persons)
+    .where(eq(schema.persons.id, id))
+    .get();
+  return person?.name.split(" ")[0] ?? `#${id}`;
+}
 
 function monthById(monthId: number) {
   return db
@@ -45,6 +56,12 @@ export async function recordRepayment(
     })
     .run();
 
+  logActivity({
+    personId: session.personId,
+    action: "recorded a payment",
+    detail: `${personName(fromPersonId)} paid ${personName(toPersonId)} ${formatCentsPlain(amountCents)} in cash`,
+  });
+
   revalidatePath("/");
   return {};
 }
@@ -68,6 +85,12 @@ export async function deleteRepayment(
   db.delete(schema.repayments)
     .where(eq(schema.repayments.id, repaymentId))
     .run();
+
+  logActivity({
+    personId: session.personId,
+    action: "removed a payment",
+    detail: `${repayment.paidDate} · ${personName(repayment.fromPersonId)} → ${personName(repayment.toPersonId)} ${formatCentsPlain(repayment.amountCents)}`,
+  });
 
   revalidatePath("/");
   return {};

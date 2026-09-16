@@ -3,9 +3,10 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/db";
+import { logActivity } from "@/lib/activity";
 import { getSession, hashPin, verifyPin } from "@/lib/auth";
 import { getOrCreateMonth } from "@/lib/data";
-import { parseAmount } from "@/lib/money";
+import { formatCentsPlain, parseAmount } from "@/lib/money";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -54,6 +55,31 @@ export async function saveOpeningBalances(
       })
       .run();
   }
+
+  const names = new Map(
+    db
+      .select({ id: schema.persons.id, name: schema.persons.name })
+      .from(schema.persons)
+      .all()
+      .map((p) => [p.id, p.name.split(" ")[0]]),
+  );
+  const saved = db
+    .select()
+    .from(schema.openingBalances)
+    .where(eq(schema.openingBalances.monthId, month.id))
+    .all()
+    .filter((row) => row.source === "manual");
+  logActivity({
+    personId: session.personId,
+    action: "set opening balances",
+    detail: `${ym}: ${
+      saved.length > 0
+        ? saved
+            .map((r) => `${names.get(r.personId) ?? r.personId} ${formatCentsPlain(r.amountCents)}`)
+            .join(" · ")
+        : "cleared — carried from the previous month again"
+    }`,
+  });
 
   revalidatePath("/");
   revalidatePath("/settings");

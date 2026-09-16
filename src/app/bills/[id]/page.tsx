@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
+import { formatWhen, listBillActivity } from "@/lib/activity";
 import { billPayers, getBillWithItems, listPersons } from "@/lib/data";
 import { formatCents, formatCentsPlain } from "@/lib/money";
 import {
@@ -53,6 +54,7 @@ export default async function BillPage({
   } catch {
     parseWarnings = [bill.parseWarnings ?? ""];
   }
+  const activity = listBillActivity(bill.id);
 
   // Same math as the settlement, so what this page says is what gets split.
   const payers = billPayers(bill);
@@ -117,6 +119,30 @@ export default async function BillPage({
           {bill.status === "draft" ? " · DRAFT" : ""}
           {locked ? " · month closed 🔒" : ""}
         </p>
+        {(bill.rawHtml || bill.sourceUrl) && (
+          <p className="mt-1 flex flex-wrap gap-3 text-xs">
+            {bill.rawHtml && (
+              <a
+                href={`/bills/${bill.id}/receipt`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-700 underline dark:text-emerald-400"
+              >
+                View receipt ↗
+              </a>
+            )}
+            {bill.sourceUrl && (
+              <a
+                href={bill.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-zinc-500 underline"
+              >
+                Keells e-bill ↗
+              </a>
+            )}
+          </p>
+        )}
       </div>
 
       {bill.status === "draft" && !locked && (
@@ -221,6 +247,12 @@ export default async function BillPage({
             );
           })}
         </ul>
+        <p className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800">
+          <strong>Shared</strong> is split between everyone ·{" "}
+          <strong>Someone&apos;s</strong> is charged only to them ·{" "}
+          <strong>Leave out</strong> means the payer keeps it for themselves,
+          nobody else pays.
+        </p>
 
         <div className="space-y-1 border-t border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800">
           <div className="flex justify-between">
@@ -313,6 +345,27 @@ export default async function BillPage({
 
       {bill.status === "draft" && !locked && (
         <ConfirmBillButton billId={bill.id} />
+      )}
+
+      {activity.length > 0 && (
+        <details className="rounded-2xl border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800">
+          <summary className="cursor-pointer select-none text-zinc-500">
+            Changes to this bill ({activity.length})
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+            {activity.map((entry) => (
+              <li key={entry.id} className="flex gap-2">
+                <span className="shrink-0 tabular-nums text-zinc-400">
+                  {formatWhen(entry.at)}
+                </span>
+                <span className="min-w-0">
+                  <span className="font-medium">{firstName(entry.personId)}</span>{" "}
+                  {entry.action} — {entry.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="flex items-center justify-between">

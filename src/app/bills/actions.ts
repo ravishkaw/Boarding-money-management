@@ -4,11 +4,31 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
+import { logActivity } from "@/lib/activity";
 import { getSession } from "@/lib/auth";
-import { getBillWithItems, getOrCreateMonth } from "@/lib/data";
-import { parseAmount } from "@/lib/money";
+import { billLabel, getBillWithItems, getOrCreateMonth } from "@/lib/data";
+import { formatCentsPlain, parseAmount } from "@/lib/money";
 
 export type ActionState = { error?: string };
+
+function personName(id: number | null): string {
+  if (id == null) return "—";
+  const person = db
+    .select({ name: schema.persons.name })
+    .from(schema.persons)
+    .where(eq(schema.persons.id, id))
+    .get();
+  return person?.name.split(" ")[0] ?? `#${id}`;
+}
+
+function statusLabel(
+  status: "shared" | "personal" | "excluded",
+  ownerPersonId: number | null,
+): string {
+  if (status === "shared") return "shared";
+  if (status === "excluded") return "left out";
+  return `${personName(ownerPersonId)}'s`;
+}
 
 function monthOfBill(billId: number) {
   const bill = db
@@ -91,7 +111,7 @@ export async function createManualBill(
   if (monthRow.status === "closed")
     return { error: `${billDate} falls in a closed month. Reopen it first.` };
 
-  db.transaction((tx) => {
+  const billId = db.transaction((tx) => {
     const bill = tx
       .insert(schema.bills)
       .values({
@@ -130,6 +150,18 @@ export async function createManualBill(
           .run();
       }
     }
+    return bill.id;
+  });
+
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "added",
+    detail: `${description} · ${formatCentsPlain(amountCents)} · ${
+      split.length > 1
+        ? split.map((s) => `${personName(s.personId)} ${formatCentsPlain(s.amountCents)}`).join(" + ")
+        : `${personName(effectivePayerId)} paid`
+    }${status === "personal" ? ` · ${personName(ownerPersonId)}'s` : ""} · ${billDate}`,
   });
 
   revalidatePath("/");
@@ -160,6 +192,13 @@ export async function setItemStatus(
     .where(eq(schema.billItems.id, itemId))
     .run();
 
+  logActivity({
+    personId: session.personId,
+    billId: item.billId,
+    action: "marked an item",
+    detail: `${item.displayName} (${formatCentsPlain(item.lineTotalCents)}): ${statusLabel(item.status, item.ownerPersonId)} → ${statusLabel(status, ownerPersonId)}`,
+  });
+
   revalidatePath("/");
   revalidatePath(`/bills/${item.billId}`);
   return {};
@@ -183,6 +222,13 @@ export async function setBillPayer(
       .set({ payerPersonId })
       .where(eq(schema.bills.id, billId))
       .run();
+  });
+
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "set the payer",
+    detail: `${personName(payerPersonId)} paid`,
   });
 
   revalidatePath("/");
@@ -243,6 +289,15 @@ export async function setBillSplit(
       .run();
   });
 
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "split the payment",
+    detail: entries
+      .map((e) => `${personName(e.personId)} ${formatCentsPlain(e.amountCents)}`)
+      .join(" + "),
+  });
+
   revalidatePath("/");
   revalidatePath(`/bills/${billId}`);
   return {};
@@ -277,6 +332,13 @@ export async function confirmBill(billId: number): Promise<ActionState> {
     .where(eq(schema.bills.id, billId))
     .run();
 
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "confirmed the bill",
+    detail: `${bill.billDate} · ${formatCentsPlain(bill.netCents)} · ${personName(bill.payerPersonId)} paid — it now counts in the settlement`,
+  });
+
   revalidatePath("/");
   revalidatePath(`/bills/${billId}`);
   return {};
@@ -305,6 +367,13 @@ export async function renameItem(
     .set({ displayName: name })
     .where(eq(schema.billItems.id, itemId))
     .run();
+
+  logActivity({
+    personId: session.personId,
+    billId: item.billId,
+    action: "renamed an item",
+    detail: `${item.displayName} → ${name}${remember ? " (remembered for future bills)" : ""}`,
+  });
 
   if (remember) {
     const { normalizeMatchKey } = await import("@/lib/keells/parse");
@@ -343,6 +412,13 @@ export async function deleteBill(billId: number): Promise<void> {
       .where(eq(schema.billPayments.billId, billId))
       .run();
     tx.delete(schema.bills).where(eq(schema.bills.id, billId)).run();
+  });
+
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "deleted a bill",
+    detail: `${bill.billDate} · ${billLabel(bill)} · ${formatCentsPlain(bill.netCents)} · ${personName(bill.payerPersonId)} paid · ${bill.items.length} item${bill.items.length === 1 ? "" : "s"}`,
   });
 
   revalidatePath("/");

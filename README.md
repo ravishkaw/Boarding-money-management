@@ -20,6 +20,16 @@ computes itself.
   workbook's shape.
 - **Item name memory** — rename "914006: BIG ONIONS" to "Big Onions" once,
   it's remembered for every future import.
+- **Every bill explains itself** — "How this bill splits" shows the shared
+  amount, each person's own items, what the payer keeps, and what the payer
+  is credited, using the same math as the settlement. "View receipt" opens
+  the snapshot exactly as Keells printed it.
+- **Log** — every change anyone makes (imports, item marks, payer changes,
+  cash payments, month locks) with who and when; each bill shows its own.
+- **Ledger check** on the Settings page — every bill reconciles with its
+  receipt and its payers, every month's movements sum to zero, opening
+  balances balance. Any mismatch is listed with a link to the bill.
+- Installable on a phone home screen (web manifest + icons).
 - 3-person PIN login, mobile-first UI, single SQLite file as the database.
 
 ## How the split works

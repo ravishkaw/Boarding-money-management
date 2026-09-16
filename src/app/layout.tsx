@@ -10,11 +10,16 @@ const geist = Geist({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Boarding",
   description: "Shared boarding expense tracker",
+  appleWebApp: { capable: true, title: "Boarding", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 export default async function RootLayout({
@@ -40,6 +45,12 @@ export default async function RootLayout({
                   className="text-zinc-600 dark:text-zinc-400"
                 >
                   Names
+                </Link>
+                <Link
+                  href="/activity"
+                  className="text-zinc-600 dark:text-zinc-400"
+                >
+                  Log
                 </Link>
                 <Link
                   href="/settings"

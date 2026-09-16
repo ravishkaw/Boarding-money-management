@@ -139,6 +139,21 @@ export const itemAliases = sqliteTable("item_alias", {
   friendlyName: text("friendly_name").notNull(),
 });
 
+/**
+ * Append-only "who changed what" log. billId has no foreign key on purpose:
+ * the log keeps its history after a bill is deleted.
+ */
+export const activity = sqliteTable("activity", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  at: text("at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  personId: integer("person_id").references(() => persons.id),
+  billId: integer("bill_id"),
+  action: text("action").notNull(),
+  detail: text("detail").notNull(),
+});
+
 export type Person = typeof persons.$inferSelect;
 export type Month = typeof months.$inferSelect;
 export type OpeningBalance = typeof openingBalances.$inferSelect;
@@ -148,3 +163,4 @@ export type BillDiscount = typeof billDiscounts.$inferSelect;
 export type Repayment = typeof repayments.$inferSelect;
 export type BillPayment = typeof billPayments.$inferSelect;
 export type ItemAlias = typeof itemAliases.$inferSelect;
+export type Activity = typeof activity.$inferSelect;

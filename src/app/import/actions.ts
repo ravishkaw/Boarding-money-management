@@ -3,8 +3,10 @@
 import { eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
+import { logActivity } from "@/lib/activity";
 import { getSession } from "@/lib/auth";
 import { getOrCreateMonth } from "@/lib/data";
+import { formatCentsPlain } from "@/lib/money";
 import {
   normalizeMatchKey,
   parseKeellsBill,
@@ -173,6 +175,13 @@ export async function importBill(
         .run();
     }
     return bill.id;
+  });
+
+  logActivity({
+    personId: session.personId,
+    billId,
+    action: "imported a bill",
+    detail: `${parsed.storeName} · ${billDate} · ${formatCentsPlain(netCents)} · ${parsed.items.length} items (draft — needs review)`,
   });
 
   redirect(`/bills/${billId}`);

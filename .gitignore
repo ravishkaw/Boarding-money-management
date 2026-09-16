@@ -46,3 +46,4 @@ local.db-*
 boarding.db
 boarding.db-*
 *.db.bak
+*.db.bak-*

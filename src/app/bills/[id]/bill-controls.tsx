@@ -202,7 +202,7 @@ export function ItemStatusControl({
             {p.name.split(" ")[0]}&apos;s
           </option>
         ))}
-        <option value="excluded">Exclude</option>
+        <option value="excluded">Leave out</option>
       </select>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
