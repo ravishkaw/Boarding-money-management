@@ -14,6 +14,7 @@ import {
   monthLabel,
   settleMonth,
 } from "@/lib/data";
+import { checkLedger } from "@/lib/health";
 import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export default async function DashboardPage() {
   const settlement = settleMonth(monthRow, persons);
   const bills = listBillsForMonth(monthRow.id);
   const drafts = bills.filter((b) => b.status === "draft");
+  const problems = checkLedger().issues.filter((i) => i.level === "error");
 
   return (
     <main className="flex flex-col gap-6">
@@ -50,6 +52,19 @@ export default async function DashboardPage() {
           Quick add
         </Link>
       </div>
+
+      {problems.length > 0 && (
+        <Link
+          href="/settings"
+          className="block rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+        >
+          <strong>
+            The ledger check found {problems.length} problem
+            {problems.length === 1 ? "" : "s"}
+          </strong>{" "}
+          — the balances below may be off. See Settings →
+        </Link>
+      )}
 
       {drafts.length > 0 && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">

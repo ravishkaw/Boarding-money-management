@@ -11,6 +11,7 @@ import {
   monthBreakdowns,
   monthLabel,
   parseYmSlug,
+  pricedItems,
   settleMonth,
 } from "@/lib/data";
 import { getSession } from "@/lib/auth";
@@ -35,17 +36,20 @@ export default async function MonthPage({
   const settlement = settleMonth(month, persons);
   const bills = listBillsForMonth(month.id);
 
-  // Pivot replacement: total spend per display name (shared+personal, not excluded)
+  // Pivot replacement: total spend per display name (shared+personal, not
+  // excluded), at each line's price after all discounts — the same figures
+  // the settlement charges.
   const itemTotals = new Map<string, { qty: number; cents: number }>();
   for (const bill of bills) {
     if (bill.status !== "confirmed") continue;
-    for (const item of bill.items) {
-      if (item.status === "excluded") continue;
+    const priced = pricedItems(bill);
+    bill.items.forEach((item, i) => {
+      if (item.status === "excluded") return;
       const entry = itemTotals.get(item.displayName) ?? { qty: 0, cents: 0 };
       entry.qty += item.quantity;
-      entry.cents += item.lineTotalCents - item.discountCents;
+      entry.cents += priced[i];
       itemTotals.set(item.displayName, entry);
-    }
+    });
   }
   const sortedTotals = [...itemTotals.entries()].sort(
     (a, b) => b[1].cents - a[1].cents,

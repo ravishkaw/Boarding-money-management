@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { parseKeellsBill } from "@/lib/keells/parse";
 import {
@@ -127,8 +128,14 @@ export function checkLedger(): HealthReport {
       // Re-read the receipt snapshot for open months (closed ones were
       // checked when they were open; re-parsing years of HTML every visit
       // isn't worth it).
-      if (month.status === "open" && bill.source === "keells" && bill.rawHtml) {
-        const parsed = parseKeellsBill(bill.rawHtml);
+      if (month.status === "open" && bill.source === "keells" && bill.hasReceipt) {
+        const snapshot = db
+          .select({ rawHtml: schema.bills.rawHtml })
+          .from(schema.bills)
+          .where(eq(schema.bills.id, bill.id))
+          .get();
+        if (!snapshot?.rawHtml) continue;
+        const parsed = parseKeellsBill(snapshot.rawHtml);
         if (parsed.errors.length > 0)
           issues.push({
             level: "error",

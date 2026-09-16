@@ -388,7 +388,6 @@ export async function renameItem(
   }
 
   revalidatePath(`/bills/${item.billId}`);
-  revalidatePath("/aliases");
   return {};
 }
 

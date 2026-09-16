@@ -292,16 +292,18 @@ export default async function BillPage({
           <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             How this bill splits
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <span>
               Shared — split {persons.length} ways
               {sharedCents !== 0 && (
-                <span className="ml-1 text-xs text-zinc-500">
-                  (about {formatCentsPlain(eachCents)} each)
+                <span className="block text-xs text-zinc-500">
+                  about {formatCentsPlain(eachCents)} each
                 </span>
               )}
             </span>
-            <span className="font-semibold">{formatCents(sharedCents)}</span>
+            <span className="shrink-0 font-semibold">
+              {formatCents(sharedCents)}
+            </span>
           </div>
           {[...personalByOwner.entries()].map(([ownerId, cents]) => (
             <div

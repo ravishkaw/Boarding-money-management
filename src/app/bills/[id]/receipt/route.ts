@@ -25,7 +25,14 @@ export async function GET(
       status: 404,
     });
 
-  return new NextResponse(bill.rawHtml, {
+  // The receipt relies on Bootstrap (blocked below) for its white page, so
+  // pin a light scheme or dark-mode browsers render black text on black.
+  const html = bill.rawHtml.replace(
+    /<head>/i,
+    "<head><style>html{background:#fff;color:#000;color-scheme:light}</style>",
+  );
+
+  return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       // Third-party HTML: its scripts, CDN styles and trackers must never run

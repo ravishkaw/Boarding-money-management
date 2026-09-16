@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import type { Month, Person } from "@/db/schema";
 import type { BillWithItems } from "@/lib/data";
-import { monthLabel } from "@/lib/data";
+import { monthLabel, pricedItems } from "@/lib/data";
 import type { Settlement } from "@/lib/settlement";
 
 const CURRENCY_FMT = '#,##0.00';
@@ -90,7 +90,12 @@ export async function buildMonthWorkbook(
       bill.source === "manual" && bill.items.length === 1
         ? "Manual"
         : (bill.storeName ?? "Keells");
-    for (const item of bill.items) {
+    // Discount = everything that came off the line (its own promotion plus
+    // its share of any receipt-level discount), so Price − Discount is what
+    // the settlement actually charges.
+    const priced = pricedItems(bill);
+    bill.items.forEach((item, i) => {
+      const discount = item.lineTotalCents - priced[i];
       itemsSheet.addRow({
         date: bill.billDate,
         bill: billLabel,
@@ -102,11 +107,11 @@ export async function buildMonthWorkbook(
         unit: rs(item.unitPriceCents),
         qty: item.quantity,
         total: rs(item.lineTotalCents),
-        discount: item.discountCents > 0 ? rs(item.discountCents) : "",
+        discount: discount !== 0 ? rs(discount) : "",
         status: item.status,
         owner: item.status === "personal" ? nameOf(item.ownerPersonId) : "",
       });
-    }
+    });
   }
   itemsSheet.getColumn("E").numFmt = CURRENCY_FMT;
   itemsSheet.getColumn("G").numFmt = CURRENCY_FMT;
@@ -116,13 +121,14 @@ export async function buildMonthWorkbook(
   const totals = new Map<string, { qty: number; cents: number }>();
   for (const bill of bills) {
     if (bill.status !== "confirmed") continue;
-    for (const item of bill.items) {
-      if (item.status === "excluded") continue;
+    const priced = pricedItems(bill);
+    bill.items.forEach((item, i) => {
+      if (item.status === "excluded") return;
       const entry = totals.get(item.displayName) ?? { qty: 0, cents: 0 };
       entry.qty += item.quantity;
-      entry.cents += item.lineTotalCents - item.discountCents;
+      entry.cents += priced[i];
       totals.set(item.displayName, entry);
-    }
+    });
   }
   const totalsSheet = workbook.addWorksheet("Item Totals");
   totalsSheet.columns = [

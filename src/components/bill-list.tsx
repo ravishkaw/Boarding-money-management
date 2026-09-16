@@ -1,30 +1,7 @@
 import Link from "next/link";
 import type { Person } from "@/db/schema";
-import { billPayers, type BillWithItems } from "@/lib/data";
+import { sharedCentsOf, type BillWithItems } from "@/lib/data";
 import { formatCents, formatCentsPlain } from "@/lib/money";
-import { effectiveCosts } from "@/lib/settlement";
-
-/** The part of a bill that goes into the shared pool; null if the math is broken. */
-function sharedCentsOf(bill: BillWithItems): number | null {
-  try {
-    const costs = effectiveCosts({
-      payers: billPayers(bill),
-      discountCents: bill.discountCents,
-      items: bill.items.map((item) => ({
-        lineTotalCents: item.lineTotalCents,
-        discountCents: item.discountCents,
-        status: item.status,
-        ownerPersonId: item.ownerPersonId,
-      })),
-    });
-    return bill.items.reduce(
-      (sum, item, i) => (item.status === "shared" ? sum + costs[i] : sum),
-      0,
-    );
-  } catch {
-    return null;
-  }
-}
 
 export function BillList({
   bills,

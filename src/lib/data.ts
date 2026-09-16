@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { Bill, BillItem, BillPayment, Month, Person } from "@/db/schema";
 import {
@@ -55,11 +55,61 @@ export function listMonths(): Month[] {
     .all();
 }
 
-export type BillWithItems = Bill & {
+/**
+ * A bill as lists and settlements see it. The receipt HTML snapshot is
+ * deliberately left out (it's ~70 KB per Keells bill); `hasReceipt` says
+ * whether one exists and `getBillWithItems` loads it for the bill page.
+ */
+export type BillWithItems = Omit<Bill, "rawHtml"> & {
+  hasReceipt: boolean;
   items: BillItem[];
   /** Split payments; empty for single-payer bills (use payerPersonId). */
   payments: BillPayment[];
 };
+
+const billListColumns = {
+  id: schema.bills.id,
+  monthId: schema.bills.monthId,
+  source: schema.bills.source,
+  status: schema.bills.status,
+  payerPersonId: schema.bills.payerPersonId,
+  billDate: schema.bills.billDate,
+  storeName: schema.bills.storeName,
+  transactionRef: schema.bills.transactionRef,
+  sourceUrl: schema.bills.sourceUrl,
+  grossCents: schema.bills.grossCents,
+  discountCents: schema.bills.discountCents,
+  netCents: schema.bills.netCents,
+  parseWarnings: schema.bills.parseWarnings,
+  createdAt: schema.bills.createdAt,
+  hasReceipt: sql<number>`${schema.bills.rawHtml} is not null`,
+};
+
+/** Every line's price after ALL discounts (receipt-level ones prorated in). */
+export function pricedItems(bill: BillWithItems): number[] {
+  return effectiveCosts({
+    payers: billPayers(bill),
+    discountCents: bill.discountCents,
+    items: bill.items.map((item) => ({
+      lineTotalCents: item.lineTotalCents,
+      discountCents: item.discountCents,
+      status: "shared",
+    })),
+  });
+}
+
+/** The part of a bill that goes into the shared pool; null if the math is broken. */
+export function sharedCentsOf(bill: BillWithItems): number | null {
+  try {
+    const costs = pricedItems(bill);
+    return bill.items.reduce(
+      (sum, item, i) => (item.status === "shared" ? sum + costs[i] : sum),
+      0,
+    );
+  } catch {
+    return null;
+  }
+}
 
 /** Effective payer list: split rows when present, else the single payer. */
 export function billPayers(
@@ -76,11 +126,12 @@ export function billPayers(
 
 export function listBillsForMonth(monthId: number): BillWithItems[] {
   const bills = db
-    .select()
+    .select(billListColumns)
     .from(schema.bills)
     .where(eq(schema.bills.monthId, monthId))
     .orderBy(desc(schema.bills.billDate), desc(schema.bills.id))
-    .all();
+    .all()
+    .map((bill) => ({ ...bill, hasReceipt: bill.hasReceipt === 1 }));
   if (bills.length === 0) return [];
   const billIds = bills.map((b) => b.id);
   const items = db
@@ -101,13 +152,16 @@ export function listBillsForMonth(monthId: number): BillWithItems[] {
   }));
 }
 
-export function getBillWithItems(billId: number): BillWithItems | undefined {
+export function getBillWithItems(
+  billId: number,
+): (BillWithItems & { rawHtml: string | null }) | undefined {
   const bill = db
     .select()
     .from(schema.bills)
     .where(eq(schema.bills.id, billId))
     .get();
   if (!bill) return undefined;
+  const hasReceipt = bill.rawHtml !== null;
   const items = db
     .select()
     .from(schema.billItems)
@@ -119,7 +173,7 @@ export function getBillWithItems(billId: number): BillWithItems | undefined {
     .from(schema.billPayments)
     .where(eq(schema.billPayments.billId, billId))
     .all();
-  return { ...bill, items, payments };
+  return { ...bill, hasReceipt, items, payments };
 }
 
 function toSettleBills(bills: BillWithItems[]): SettleBill[] {

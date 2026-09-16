@@ -41,12 +41,6 @@ export default async function RootLayout({
                   Months
                 </Link>
                 <Link
-                  href="/aliases"
-                  className="text-zinc-600 dark:text-zinc-400"
-                >
-                  Names
-                </Link>
-                <Link
                   href="/activity"
                   className="text-zinc-600 dark:text-zinc-400"
                 >

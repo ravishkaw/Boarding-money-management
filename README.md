@@ -18,8 +18,8 @@ computes itself.
   forward month to month, "who pays whom" suggestions.
 - **Excel export** per month (Summary / Items / Item Totals) in the old
   workbook's shape.
-- **Item name memory** — rename "914006: BIG ONIONS" to "Big Onions" once,
-  it's remembered for every future import.
+- **Item name memory** — tap an item on a bill, rename "BIG ONIONS" to
+  "Big Onions" with "remember" ticked, and every future import uses it.
 - **Every bill explains itself** — "How this bill splits" shows the shared
   amount, each person's own items, what the payer keeps, and what the payer
   is credited, using the same math as the settlement. "View receipt" opens
