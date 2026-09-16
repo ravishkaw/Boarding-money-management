@@ -1,7 +1,30 @@
 import Link from "next/link";
 import type { Person } from "@/db/schema";
-import type { BillWithItems } from "@/lib/data";
-import { formatCents } from "@/lib/money";
+import { billPayers, type BillWithItems } from "@/lib/data";
+import { formatCents, formatCentsPlain } from "@/lib/money";
+import { effectiveCosts } from "@/lib/settlement";
+
+/** The part of a bill that goes into the shared pool; null if the math is broken. */
+function sharedCentsOf(bill: BillWithItems): number | null {
+  try {
+    const costs = effectiveCosts({
+      payers: billPayers(bill),
+      discountCents: bill.discountCents,
+      items: bill.items.map((item) => ({
+        lineTotalCents: item.lineTotalCents,
+        discountCents: item.discountCents,
+        status: item.status,
+        ownerPersonId: item.ownerPersonId,
+      })),
+    });
+    return bill.items.reduce(
+      (sum, item, i) => (item.status === "shared" ? sum + costs[i] : sum),
+      0,
+    );
+  } catch {
+    return null;
+  }
+}
 
 export function BillList({
   bills,
@@ -27,6 +50,13 @@ export function BillList({
           bill.source === "manual" && bill.items.length === 1
             ? bill.items[0].displayName
             : (bill.storeName ?? "Keells");
+        const shared = sharedCentsOf(bill);
+        const sharedNote =
+          shared === null
+            ? " · discounts don't add up"
+            : shared !== bill.netCents
+              ? ` · shared ${formatCentsPlain(shared)}`
+              : "";
         return (
           <li key={bill.id}>
             <Link
@@ -41,6 +71,7 @@ export function BillList({
                     ? `${bill.payments.map((p) => nameOf(p.personId)).join(" + ")} paid`
                     : `${nameOf(bill.payerPersonId)} paid`}
                   {bill.items.length > 1 ? ` · ${bill.items.length} items` : ""}
+                  {sharedNote}
                   {bill.status === "draft" ? " · DRAFT" : ""}
                 </div>
               </div>
