@@ -14,6 +14,10 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+// Browsers fetch the manifest and home-screen icons without cookies, so
+// those must stay outside the login wall.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|apple-icon|.*\\.(?:svg|png|jpg|ico)$).*)",
+  ],
 };
