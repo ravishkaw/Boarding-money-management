@@ -25,10 +25,17 @@ export type ParsedBill = {
   items: ParsedItem[];
   /** Receipt-level discounts NOT attributed to a specific line. */
   discounts: ParsedDiscount[];
-  /** Item-wise + receipt-level. */
+  /** Item-wise + receipt-level. Anchored to the receipt's gross − net. */
   totalDiscountCents: number;
   grossCents: number | null;
   netCents: number | null;
+  /**
+   * Blocking problems: the money on this bill can't be trusted, so it must
+   * not be imported (an item misread, a promotion we couldn't place, totals
+   * that don't reconcile with the receipt's own Net Amount).
+   */
+  errors: string[];
+  /** Non-blocking notes worth showing on the bill. */
   warnings: string[];
 };
 
@@ -37,10 +44,17 @@ const MONTHS: Record<string, string> = {
   jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
 };
 
+/** Keells SKU codes: numeric ("935010", "4645") or prefixed ("R1234" re-use bag, "E1234" bag refund). */
+const ITEM_CODE = /^[A-Z0-9]{3,10}$/;
+
 function parseCents(text: string): number | null {
   const cleaned = text.replace(/[,\s]/g, "");
   if (!/^-?\d+(\.\d{1,2})?$/.test(cleaned)) return null;
   return Math.round(Number(cleaned) * 100);
+}
+
+function rupees(cents: number): string {
+  return (cents / 100).toFixed(2);
 }
 
 /** "BIG ONIONS" -> "Big Onions" (default display name when no alias exists) */
@@ -57,6 +71,7 @@ export function normalizeMatchKey(rawName: string): string {
 
 export function parseKeellsBill(html: string): ParsedBill {
   const $ = cheerio.load(html);
+  const errors: string[] = [];
   const warnings: string[] = [];
 
   // ---- Header: date, time, transaction ids, store code -------------------
@@ -112,11 +127,11 @@ export function parseKeellsBill(html: string): ParsedBill {
     const quantity = /^-?\d+(\.\d+)?$/.test(qtyText) ? Number(qtyText) : null;
     const lineTotalCents = parseCents(amtText);
     if (unitPriceCents === null || quantity === null || lineTotalCents === null) {
-      warnings.push(`Could not read line ${lnText || index + 1} ("${itemText}").`);
+      errors.push(`Could not read line ${lnText || index + 1} ("${itemText}").`);
       return;
     }
 
-    const codeMatch = /^(\d{3,8}):\s*(.+)$/.exec(itemText);
+    const codeMatch = /^([A-Z0-9]{3,10}):\s*(.+)$/.exec(itemText);
     const itemCode = codeMatch ? codeMatch[1] : null;
     const rawName = (codeMatch ? codeMatch[2] : itemText).trim();
 
@@ -137,11 +152,14 @@ export function parseKeellsBill(html: string): ParsedBill {
       discountNote: null,
     });
   });
-  if (items.length === 0) warnings.push("No line items found on this bill.");
+  if (items.length === 0) errors.push("No line items found on this bill.");
 
   // ---- Item-wise promotion rows -------------------------------------------
-  // Under "Exclusive deals for you" / "Keells Deals": 4 cells per row —
-  // line no, item code, description ("25.00% Dis"), amount.
+  // Under "Exclusive deals for you" / "Keells Deals" / "You earned a Green
+  // Discount of": 4 cells per row — line no, item code, description
+  // ("25.00% Dis", "Value Dis"), amount. Every one of these must land on a
+  // line, otherwise the discount would be smeared across the whole bill
+  // instead of coming off the item it belongs to.
   const byLineNo = new Map(items.map((item) => [item.lineNo, item]));
   $("tr").each((_, row) => {
     const cells = $(row).children("td");
@@ -150,11 +168,16 @@ export function parseKeellsBill(html: string): ParsedBill {
     const code = cells.eq(1).text().trim();
     const note = cells.eq(2).text().trim();
     const amount = parseCents(cells.eq(3).text().trim());
-    if (!Number.isInteger(lineNo) || amount === null || !/^\d{3,8}$/.test(code))
+    if (!Number.isInteger(lineNo) || amount === null) return;
+    if (!ITEM_CODE.test(code)) {
+      errors.push(
+        `Promotion "${note}" (line ${lineNo}, code "${code}") has a code we don't recognise.`,
+      );
       return;
+    }
     const item = byLineNo.get(lineNo);
     if (!item || (item.itemCode && item.itemCode !== code)) {
-      warnings.push(
+      errors.push(
         `Promotion "${note}" (line ${lineNo}, ${code}) doesn't match any item.`,
       );
       return;
@@ -163,6 +186,7 @@ export function parseKeellsBill(html: string): ParsedBill {
     item.discountNote = item.discountNote ? `${item.discountNote}; ${note}` : note;
   });
   const itemwiseDiscount = items.reduce((sum, i) => sum + i.discountCents, 0);
+  const itemSum = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
 
   // ---- Totals: gross, receipt-level discounts, net -------------------------
   let grossCents: number | null = null;
@@ -181,22 +205,50 @@ export function parseKeellsBill(html: string): ParsedBill {
       labeledDiscounts.push({ description: label, amountCents: Math.abs(amount) });
   });
 
-  // Rows like "Promotion Discount" / "Total promotion(s) savings" restate the
-  // item-wise total — drop them so nothing double-counts.
-  const discounts = labeledDiscounts.filter(
-    (d) =>
-      !(/promotion/i.test(d.description) && d.amountCents === itemwiseDiscount),
-  );
-
-  const totalDiscountCents =
-    itemwiseDiscount + discounts.reduce((sum, d) => sum + d.amountCents, 0);
-  const itemSum = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
-  if (netCents !== null && Math.abs(itemSum - totalDiscountCents - netCents) > 5) {
-    warnings.push(
-      `Items minus discounts don't add up to the net amount (off by ${
-        (itemSum - totalDiscountCents - netCents) / 100
-      }).`,
+  // The receipt's own Gross → Net is the ground truth for money. Everything
+  // else (promo rows, "Promotion Discount" / "Total promotion(s) savings"
+  // restatements) has to reconcile with it or the import is refused.
+  if (grossCents === null) errors.push("Could not read the Gross Amount.");
+  else if (grossCents !== itemSum)
+    errors.push(
+      `Line items add up to ${rupees(itemSum)} but the receipt's Gross Amount is ${rupees(grossCents)}.`,
     );
+  if (netCents === null) errors.push("Could not read the Net Amount.");
+
+  let totalDiscountCents: number;
+  let discounts: ParsedDiscount[] = [];
+  if (grossCents !== null && netCents !== null) {
+    totalDiscountCents = grossCents - netCents;
+    const remaining = totalDiscountCents - itemwiseDiscount;
+    if (remaining < 0) {
+      errors.push(
+        `Item promotions add up to ${rupees(itemwiseDiscount)}, more than the receipt's total discount of ${rupees(totalDiscountCents)}.`,
+      );
+    } else if (remaining > 0) {
+      // Something beyond the item promotions came off the bill. Explain it
+      // with the labelled rows if they account for it exactly; otherwise
+      // record it as one receipt-level discount so the total still matches.
+      const others = labeledDiscounts.filter(
+        (d) =>
+          !(
+            /promotion|saving/i.test(d.description) &&
+            d.amountCents === itemwiseDiscount
+          ),
+      );
+      const othersSum = others.reduce((sum, d) => sum + d.amountCents, 0);
+      if (othersSum === remaining) {
+        discounts = others;
+      } else {
+        discounts = [
+          { description: "Receipt-level discount", amountCents: remaining },
+        ];
+        warnings.push(
+          `${rupees(remaining)} came off this bill beyond the item promotions; the receipt doesn't label it clearly.`,
+        );
+      }
+    }
+  } else {
+    totalDiscountCents = itemwiseDiscount;
   }
 
   return {
@@ -208,8 +260,9 @@ export function parseKeellsBill(html: string): ParsedBill {
     items,
     discounts,
     totalDiscountCents,
-    grossCents: grossCents ?? itemSum,
-    netCents: netCents ?? itemSum - totalDiscountCents,
+    grossCents,
+    netCents,
+    errors,
     warnings,
   };
 }

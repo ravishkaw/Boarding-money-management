@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:seed": "dotenv -e .env.local -- tsx src/db/seed.ts",
+    "db:reconcile": "dotenv -e .env.local -- tsx scripts/reconcile-keells-bills.ts",
     "test": "vitest run"
   },
   "dependencies": {

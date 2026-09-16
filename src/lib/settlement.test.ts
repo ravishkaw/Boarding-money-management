@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   effectiveCosts,
+  effectiveTotalOf,
+  payerCredits,
   settle,
   type SettleBill,
 } from "./settlement";
@@ -70,7 +72,10 @@ describe("effectiveCosts", () => {
     expect(effectiveCosts(bill)).toEqual([225, 0]);
   });
 
-  it("gives excluded items zero cost and no discount share", () => {
+  it("zeroes excluded items but still gives them their share of a receipt-level discount", () => {
+    // 1,000 bill, 10% off everything, 500 of it is the payer's own (excluded).
+    // The pool must only carry the discounted 450 of the shared item; the
+    // other 450 (not 500) is what the payer eats for their excluded item.
     const bill: SettleBill = {
       payers: [{ personId: A, amountCents: 900 }],
       discountCents: 100,
@@ -79,7 +84,35 @@ describe("effectiveCosts", () => {
         { lineTotalCents: 500, status: "shared" },
       ],
     };
-    expect(effectiveCosts(bill)).toEqual([0, 400]);
+    expect(effectiveCosts(bill)).toEqual([0, 450]);
+    expect(effectiveTotalOf(bill)).toBe(450);
+    expect(payerCredits(bill)).toEqual([{ personId: A, amountCents: 450 }]);
+  });
+
+  it("lets a Green Discount on a Rs. 0.01 bag line go negative and reduce the pool", () => {
+    // Real receipt shape: bag 0.01 with a 6.00 "Value Dis", refund line -0.01.
+    const bill: SettleBill = {
+      payers: [{ personId: A, amountCents: 100000 - 600 }],
+      discountCents: 600,
+      items: [
+        { lineTotalCents: 100000, status: "shared" },
+        { lineTotalCents: 1, discountCents: 600, status: "shared" },
+        { lineTotalCents: -1, status: "shared" },
+      ],
+    };
+    const costs = effectiveCosts(bill);
+    expect(costs).toEqual([100000, -599, -1]);
+    expect(costs.reduce((a, b) => a + b, 0)).toBe(100000 - 600);
+    expect(effectiveTotalOf(bill)).toBe(100000 - 600);
+  });
+
+  it("throws when item-wise discounts exceed the bill's total discount", () => {
+    const bill: SettleBill = {
+      payers: [{ personId: A, amountCents: 300 }],
+      discountCents: 50,
+      items: [{ lineTotalCents: 300, discountCents: 75, status: "shared" }],
+    };
+    expect(() => effectiveCosts(bill)).toThrow(/exceed/);
   });
 });
 
@@ -340,6 +373,22 @@ describe("settle", () => {
     ).toThrow(/owner/);
   });
 
+  it("throws instead of leaking money when a bill's payers add up to nothing", () => {
+    // Costs would enter the pool with nobody credited for them.
+    expect(() =>
+      settle({
+        personIds: [A, P],
+        bills: [
+          {
+            payers: [{ personId: A, amountCents: 0 }],
+            discountCents: 0,
+            items: [{ lineTotalCents: 100, status: "shared" }],
+          },
+        ],
+      }),
+    ).toThrow(/credits/);
+  });
+
   it("carries opening balances into closings", () => {
     const s = settle({
       personIds: [A, P, R],
@@ -387,6 +436,37 @@ describe("settle", () => {
     expect(a.deltaCents).toBe(-175591); // Excel: -1,755.90 (±1c)
     expect(p.deltaCents).toBe(-239295); // Excel: -2,392.95 exact
     expect(r.deltaCents).toBe(414886); //  Excel: +4,148.86 exact
+    expect(a.deltaCents + p.deltaCents + r.deltaCents).toBe(0);
+  });
+
+  /**
+   * Golden test for the 06-Sep-2026 Keells bill (DC89XC) as it should settle:
+   * gross 7,479.50 − 415.00 (incl. the 6.00 Green Discount on the bag) =
+   * net 7,064.50 paid by Pahasara, with one 260.00 personal item of his own.
+   */
+  it("settles the Green Discount bill to the receipt's net, to the cent", () => {
+    const bill: SettleBill = {
+      payers: [{ personId: P, amountCents: 706450 }],
+      discountCents: 41500,
+      items: [
+        { lineTotalCents: 161000, discountCents: 32200, status: "shared" },
+        { lineTotalCents: 45000, discountCents: 4500, status: "shared" },
+        { lineTotalCents: 36000, discountCents: 3600, status: "shared" },
+        { lineTotalCents: 2772, discountCents: 600, status: "shared" },
+        { lineTotalCents: 26000, status: "personal", ownerPersonId: P },
+        { lineTotalCents: 1, discountCents: 600, status: "shared" }, // re-use bag
+        { lineTotalCents: -1, status: "shared" }, // bag refund
+        { lineTotalCents: 747950 - 161000 - 45000 - 36000 - 2772 - 26000, status: "shared" },
+      ],
+    };
+    const s = settle({ personIds: [A, P, R], bills: [bill] });
+    const [a, p, r] = s.persons;
+    expect(p.paidCents).toBe(706450);
+    expect(p.personalCents).toBe(26000);
+    expect(s.sharedPoolCents).toBe(706450 - 26000);
+    expect(a.fairShareCents + p.fairShareCents + r.fairShareCents).toBe(
+      706450 - 26000,
+    );
     expect(a.deltaCents + p.deltaCents + r.deltaCents).toBe(0);
   });
 });

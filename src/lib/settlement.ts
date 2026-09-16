@@ -72,40 +72,50 @@ export type Settlement = {
 };
 
 /**
- * Effective cost per item. Item-wise discounts come straight off their own
- * line; any remaining receipt-level discount (total − Σ item-wise) is
- * prorated across included (non-excluded) items, with the last included item
- * absorbing the rounding remainder so the bill sums exactly.
+ * Effective cost per item — what each line really cost after discounts.
+ *
+ * Item-wise discounts come straight off their own line. Any remaining
+ * receipt-level discount (total − Σ item-wise) is prorated across EVERY
+ * line, excluded ones included, with the last line absorbing the rounding
+ * remainder: the costs then sum exactly to gross − discount, i.e. the net
+ * the payer actually handed over. Excluded lines are zeroed afterwards, so
+ * the payer eats an excluded item at its discounted price rather than at
+ * full price while everyone else pockets its share of the discount.
+ *
+ * Throws if the item-wise discounts exceed the bill's total discount: that
+ * bill would settle for less than was paid, so it must not be settled.
  */
 export function effectiveCosts(bill: SettleBill): number[] {
   const base = bill.items.map(
     (item) => item.lineTotalCents - (item.discountCents ?? 0),
   );
-  const included = bill.items
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.status !== "excluded");
-  const includedTotal = included.reduce((sum, { index }) => sum + base[index], 0);
-
   const itemwiseTotal = bill.items.reduce(
     (sum, item) => sum + (item.discountCents ?? 0),
     0,
   );
-  const remaining = Math.max(0, bill.discountCents - itemwiseTotal);
+  if (itemwiseTotal > bill.discountCents)
+    throw new Error(
+      `settle: item-wise discounts (${itemwiseTotal}) exceed the bill discount (${bill.discountCents})`,
+    );
+  const remaining = bill.discountCents - itemwiseTotal;
+  const baseTotal = base.reduce((sum, b) => sum + b, 0);
 
-  const costs = bill.items.map(() => 0);
-  if (includedTotal <= 0 || remaining === 0) {
-    for (const { index } of included) costs[index] = base[index];
-    return costs;
-  }
-
-  let discountLeft = remaining;
-  included.forEach(({ index }, i) => {
-    const share =
-      i === included.length - 1
+  const costs = [...base];
+  if (remaining > 0 && costs.length > 0) {
+    let discountLeft = remaining;
+    base.forEach((lineBase, i) => {
+      const last = i === base.length - 1;
+      const share = last
         ? discountLeft
-        : Math.round((remaining * base[index]) / includedTotal);
-    costs[index] = base[index] - share;
-    discountLeft -= share;
+        : baseTotal > 0
+          ? Math.round((remaining * lineBase) / baseTotal)
+          : 0;
+      costs[i] = lineBase - share;
+      discountLeft -= share;
+    });
+  }
+  bill.items.forEach((item, i) => {
+    if (item.status === "excluded") costs[i] = 0;
   });
   return costs;
 }
@@ -169,7 +179,15 @@ export function settle(input: SettleInput): Settlement {
       }
     });
 
-    for (const credit of payerCredits(bill, effectiveTotal)) {
+    // Every cent charged to the pool or to a person must be credited to a
+    // payer, or money silently leaks (e.g. a bill whose payers add to zero).
+    const credits = payerCredits(bill, effectiveTotal);
+    const credited = credits.reduce((sum, c) => sum + c.amountCents, 0);
+    if (credited !== effectiveTotal)
+      throw new Error(
+        `settle: bill credits (${credited}) don't match its cost (${effectiveTotal})`,
+      );
+    for (const credit of credits) {
       paid.set(
         credit.personId,
         (paid.get(credit.personId) ?? 0) + credit.amountCents,

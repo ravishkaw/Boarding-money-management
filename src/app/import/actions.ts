@@ -61,6 +61,20 @@ export async function importBill(
         "Fetched the bill but couldn't read any items from it. The format may have changed — add it manually for now.",
     };
   }
+  // Money we can't reconcile with the receipt's own Net Amount must never
+  // reach the settlement: refuse the import rather than save a wrong bill.
+  if (
+    parsed.errors.length > 0 ||
+    parsed.grossCents === null ||
+    parsed.netCents === null ||
+    parsed.grossCents - parsed.totalDiscountCents !== parsed.netCents
+  ) {
+    return {
+      error: `Couldn't read this bill safely, so it was NOT saved: ${
+        parsed.errors.join(" ") || "totals don't reconcile."
+      } Add it manually for now.`,
+    };
+  }
 
   // Duplicate import guard
   if (parsed.transactionRef) {
@@ -102,11 +116,13 @@ export async function importBill(
       : [];
   const aliasMap = new Map(aliases.map((a) => [a.matchKey, a.friendlyName]));
 
+  // The receipt's Gross → Net is what the card was actually charged; the
+  // parser has already verified the items and promotions reconcile with it.
+  const grossCents = parsed.grossCents;
   const discountCents = parsed.totalDiscountCents;
-  const grossCents = parsed.items.reduce(
-    (sum, item) => sum + item.lineTotalCents,
-    0,
-  );
+  const netCents = parsed.netCents;
+  const parseWarnings =
+    parsed.warnings.length > 0 ? JSON.stringify(parsed.warnings) : null;
 
   const billId = db.transaction((tx) => {
     const bill = tx
@@ -123,7 +139,8 @@ export async function importBill(
         rawHtml: html,
         grossCents,
         discountCents,
-        netCents: grossCents - discountCents,
+        netCents,
+        parseWarnings,
       })
       .returning()
       .get();

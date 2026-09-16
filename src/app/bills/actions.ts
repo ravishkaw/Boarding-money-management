@@ -60,7 +60,7 @@ export async function createManualBill(
   const amountCents = Math.round(unitPriceCents * quantity);
 
   // Optional split between payers: entries must add up to the total.
-  let split: { personId: number; amountCents: number }[] = [];
+  const split: { personId: number; amountCents: number }[] = [];
   if (splitMode) {
     for (const [key, value] of formData.entries()) {
       const match = /^splitAmount_(\d+)$/.exec(key);

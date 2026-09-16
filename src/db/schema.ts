@@ -61,6 +61,8 @@ export const bills = sqliteTable("bill", {
   grossCents: integer("gross_cents").notNull().default(0),
   discountCents: integer("discount_cents").notNull().default(0),
   netCents: integer("net_cents").notNull().default(0),
+  /** JSON string[] of non-blocking parser notes worth a look (Keells imports). */
+  parseWarnings: text("parse_warnings"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
